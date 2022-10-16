@@ -1,0 +1,11 @@
+[build-system]
+requires = ["setuptools ~= 58.0"]
+
+[project]
+name = "komoe"
+description = "A static site generator"
+authors = [{name = "Louis DEVIE"}]
+dynamic = ["version"]
+
+[project.urls]
+Home = "https://github.com/louisdevie/komoe"

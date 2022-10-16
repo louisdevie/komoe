@@ -1,0 +1,14 @@
+{
+    "folders": [
+        {
+            "name": "Project",
+            "path": ".",
+            "folder_exclude_patterns": ["*"],
+        },
+        {
+            "name": "App",
+            "path": "komoe",
+            "folder_exclude_patterns": ["__pycache__"],
+        }
+    ]
+}
