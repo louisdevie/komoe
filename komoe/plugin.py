@@ -5,7 +5,7 @@ from . import log
 __all__ = ["before_build", "after_build", "before_plugin", "after_plugin", "log"]
 
 
-class ModuleEvents:
+class _ModuleEvents:
     def __init__(self):
         self.__on_start = list()
         self.__on_end = list()
@@ -27,7 +27,7 @@ class ModuleEvents:
             raise ValueError(f"invalid event “{event}”")
 
 
-class Action:
+class _Action:
     def __init__(self, callback):
         self.__callback = callback
         self.__called = False
@@ -52,7 +52,7 @@ class Action:
         self.__module = value
 
 
-class ModuleActions:
+class _ModuleActions:
     def __init__(self, name):
         self.__actions = list()
         self.__name = name
@@ -75,7 +75,7 @@ class ModuleActions:
 
 
 class PluginScheduler:
-    __events = {"build!": ModuleEvents()}
+    __events = {"build!": _ModuleEvents()}
     __actions = {}
 
     context = None
@@ -84,13 +84,13 @@ class PluginScheduler:
     @classmethod
     def events(cls, module):
         if not module in cls.__events:
-            cls.__events[module] = ModuleEvents()
+            cls.__events[module] = _ModuleEvents()
         return cls.__events[module]
 
     @classmethod
     def actions(cls, module):
         if not module in cls.__actions:
-            cls.__actions[module] = ModuleActions(module)
+            cls.__actions[module] = _ModuleActions(module)
 
         return cls.__actions[module]
 
@@ -105,7 +105,7 @@ class PluginScheduler:
             )
             raise click.ClickException("failed to load plugins")
 
-        action = Action(callback)
+        action = _Action(callback)
 
         events = cls.events(module)
         events.register(event, action)

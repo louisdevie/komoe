@@ -5,7 +5,7 @@ with open("README.md", "rt", encoding="utf8") as f:
 
 setup(
     name="KOMOE",
-    version="0.0.3",
+    version="0.1.0",
     description="A static site generator",
     long_description=README,
     long_description_content_type="text/markdown",

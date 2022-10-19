@@ -78,6 +78,6 @@ def build(project_file, project_dir, fresh):
 
     config = ProjectConfig.from_file(config_path)
 
-    builder = Builder(config, config_path.parent)
+    builder = Builder(config, config_path.parent, fresh=fresh)
 
     builder.build()
