@@ -108,7 +108,10 @@ class PluginScheduler:
 
     @classmethod
     def subscribe(cls, module, event, callback):
-        plugin_name = callback.__module__.replace("_komoe_plugin", "")
+        plugin_name = cls.__context.get_package_alias(
+            callback.__module__,
+            callback.__module__.replace("_komoe_plugin", ""),
+        )
         action_name = callback.__name__
 
         if plugin_name == module:
@@ -129,7 +132,10 @@ class PluginScheduler:
 
     @classmethod
     def register_setup(cls, callback):
-        plugin_name = callback.__module__.replace("_komoe_plugin", "")
+        plugin_name = cls.__context.get_package_alias(
+            callback.__module__,
+            callback.__module__.replace("_komoe_plugin", ""),
+        )
 
         cls.__setup.append((plugin_name, callback))
 
@@ -143,7 +149,7 @@ class PluginScheduler:
 
     @classmethod
     def set_context(cls, context):
-        cls.__context = BuilderProxy(context)
+        cls.__context = context
 
     @classmethod
     def set_config(cls, config):
@@ -155,8 +161,10 @@ class PluginScheduler:
             if not action.module.started:
                 cls.notify(action.module.name, "start")
 
-            cls.__context.log.context = action.module.name
-            action(cls.__context, cls.__config.get(action.module.name, {}))
+            action(
+                BuilderProxy(cls.__context, action.module.name),
+                cls.__config.get(action.module.name, {}),
+            )
 
             if action.module.ended:
                 cls.notify(action.module.name, "end")
@@ -164,21 +172,19 @@ class PluginScheduler:
     @classmethod
     def setup(cls):
         for module, callback in cls.__setup:
-            cls.__context.log.context = module
-            callback(cls.__context, cls.__config.get(module, {}))
+            callback(
+                BuilderProxy(cls.__context, module),
+                cls.__config.get(module, {}),
+            )
 
 
 class LogProxy:
-    def __init__(self):
-        self.__context = None
+    def __init__(self, ctx):
+        self.__context = ctx
 
     @property
     def context(self):
         return self.__context
-
-    @context.setter
-    def context(self, value):
-        self.__context = value
 
     def error(self, message):
         log.error(f"{self.context}: {message}")
@@ -191,9 +197,9 @@ class LogProxy:
 
 
 class BuilderProxy:
-    def __init__(self, builder):
+    def __init__(self, builder, log_ctx):
         self.__builder = builder
-        self.__log = LogProxy()
+        self.__log = LogProxy(log_ctx)
 
     @property
     def log(self):

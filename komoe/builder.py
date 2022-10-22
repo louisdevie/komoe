@@ -31,6 +31,8 @@ class Builder:
             loader=jinja2.FileSystemLoader(str(self.templates_dir))
         )
 
+        self.__plugin_packages = {}
+
     @property
     def cache_dir(self):
         return self.__base_dir / ".cache"
@@ -56,9 +58,10 @@ class Builder:
         return self.__base_dir / self.__config.static_directory
 
     def build(self):
+        PluginScheduler.set_context(self)
+
         self.__load_plugins()
 
-        PluginScheduler.set_context(self)
         PluginScheduler.set_config(
             {
                 plugin: self.__config.plugins[plugin].get("config", {})
@@ -96,11 +99,25 @@ class Builder:
     def snapshot_diff(self, name):
         return self.snapshot_current(name).diff(self.snapshot_old(name))
 
+    def get_package_alias(self, pkg, default=None):
+        return self.__plugin_packages.get(pkg, default)
+
     def __load_plugins(self):
         for name, plugin in self.__config.plugins.items():
-            if "script" in plugin:
+            if "package" in plugin:
+                # loading installed package
+                self.__plugin_packages[plugin["package"]] = name
+                try:
+                    importlib.import_module(plugin["package"])
+                except Exception as e:
+                    log.error(f"can't load plugin “{name}”: {e}")
+                    raise click.ClickException("failed to load plugins")
+
+            elif "script" in plugin:
                 # loading module from file path
-                script_path = self.__base_dir / plugin["script"]
+                script_path = Path(plugin["script"])
+                if not script_path.is_absolute():
+                    script_path = self.__base_dir / script_path
 
                 spec = importlib.util.spec_from_file_location(
                     name + "_komoe_plugin", script_path
@@ -114,7 +131,7 @@ class Builder:
                     raise click.ClickException("failed to load plugins")
 
             else:
-                log.warn(f"plugin “{name}” is declared but has no script")
+                log.warn(f"plugin “{name}” is declared but has no package/script")
 
     def __load_cache_data(self):
         # loading previous snapshots
