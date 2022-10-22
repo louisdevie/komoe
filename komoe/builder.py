@@ -6,10 +6,10 @@ import json
 from pathlib import Path
 
 from . import log
-from .plugin import PluginScheduler
+from .plugin import PluginScheduler, LogProxy
 from .snapshot import Snapshot, Diff
 from .markdown import Markdown
-from .utils import file_status, cleartree
+from .utils import file_status, file_status_done, cleartree
 
 
 class Builder:
@@ -18,32 +18,55 @@ class Builder:
         self.__options = options
 
         self.__base_dir = base_dir
-        self.__cache_dir = self.__base_dir / ".cache"
-        self.__output_dir = self.__base_dir / self.__config.output_directory
-        self.__source_dir = self.__base_dir / self.__config.source_directory
-        self.__templates_dir = self.__base_dir / self.__config.templates_directory
-        self.__static_dir = self.__base_dir / self.__config.static_directory
 
         self.__snapshots = {
-            "source": {"path": self.__source_dir},
-            "templates": {"path": self.__templates_dir},
-            "static": {"path": self.__static_dir},
+            "source": {"path": self.source_dir},
+            "templates": {"path": self.templates_dir},
+            "static": {"path": self.static_dir},
         }
         self.__templates = {}
 
         self.__md = Markdown()
         self.__j2 = jinja2.Environment(
-            loader=jinja2.FileSystemLoader(str(self.__templates_dir))
+            loader=jinja2.FileSystemLoader(str(self.templates_dir))
         )
 
-    def build(self):
-        PluginScheduler.context = self
-        PluginScheduler.config = {
-            plugin: self.__config.plugins[plugin].get("config", {})
-            for plugin in self.__config.plugins
-        }
+    @property
+    def cache_dir(self):
+        return self.__base_dir / ".cache"
 
+    @property
+    def output_dir(self):
+        return self.__base_dir / self.__config.output_directory
+
+    @property
+    def static_output_dir(self):
+        return self.output_dir / "_static"
+
+    @property
+    def source_dir(self):
+        return self.__base_dir / self.__config.source_directory
+
+    @property
+    def templates_dir(self):
+        return self.__base_dir / self.__config.templates_directory
+
+    @property
+    def static_dir(self):
+        return self.__base_dir / self.__config.static_directory
+
+    def build(self):
         self.__load_plugins()
+
+        PluginScheduler.set_context(self)
+        PluginScheduler.set_config(
+            {
+                plugin: self.__config.plugins[plugin].get("config", {})
+                for plugin in self.__config.plugins
+            }
+        )
+        PluginScheduler.setup()
+
         self.__scan_directories()
 
         if self.__options["fresh"]:
@@ -61,7 +84,7 @@ class Builder:
 
         self.__dump_cache_data()
 
-    def add_directory(self, name, path):
+    def snapshot_register(self, name, path):
         self.__snapshots[name] = {"path": self.__base_dir / path}
 
     def snapshot_current(self, name):
@@ -86,7 +109,7 @@ class Builder:
 
                 try:
                     spec.loader.exec_module(module)
-                except FileNotFoundError as e:
+                except Exception as e:
                     log.error(f"can't load plugin “{name}”: {e}")
                     raise click.ClickException("failed to load plugins")
 
@@ -96,27 +119,29 @@ class Builder:
     def __load_cache_data(self):
         # loading previous snapshots
         for name in self.__snapshots:
-            snapshot_path = self.__cache_dir / ("snapshot_" + name)
+            snapshot_path = self.cache_dir / ("snapshot_" + name)
             if snapshot_path.is_file():
                 with open(snapshot_path, "rt", encoding="utf8") as f:
                     self.__snapshots[name]["old"] = Snapshot.load(f.read())
 
         # load previous page-template relationships
-        with open(self.__cache_dir / "relationships", "rt", encoding="utf8") as f:
-            self.__templates = json.load(f)
+        relationships_path = self.cache_dir / "relationships"
+        if relationships_path.is_file():
+            with open(relationships_path, "rt", encoding="utf8") as f:
+                self.__templates = json.load(f)
 
     def __dump_cache_data(self):
-        if not self.__cache_dir.exists():
-            self.__cache_dir.mkdir()
+        if not self.cache_dir.exists():
+            self.cache_dir.mkdir()
 
         # dump snapshots
         for name in self.__snapshots:
-            snapshot_path = self.__cache_dir / ("snapshot_" + name)
+            snapshot_path = self.cache_dir / ("snapshot_" + name)
             with open(snapshot_path, "wt+", encoding="utf8") as f:
                 f.write(self.__snapshots[name]["current"].dump())
 
         # dump page-template relationships
-        with open(self.__cache_dir / "relationships", "wt+", encoding="utf8") as f:
+        with open(self.cache_dir / "relationships", "wt+", encoding="utf8") as f:
             json.dump(self.__templates, f)
 
     def __scan_directories(self):
@@ -162,7 +187,7 @@ class Builder:
             log.info(f"Document environment updated: no changes")
             return
 
-        click.echo("Rendering pages ...")
+        click.echo("Rendering pages:")
 
         for file in created:
             self.__render_page(file, Diff.CREATED)
@@ -178,8 +203,8 @@ class Builder:
         dest = base + ".html"
 
         return (
-            self.__source_dir / file,
-            self.__output_dir / dest,
+            self.source_dir / file,
+            self.output_dir / dest,
         )
 
     def __render_page(self, file, modified):
@@ -195,9 +220,7 @@ class Builder:
 
         content = self.__md.render(md)
 
-        template_path = str(
-            self.__find_template_file().relative_to(self.__templates_dir)
-        )
+        template_path = str(self.__find_template_file().relative_to(self.templates_dir))
 
         same_template = False
         for old_template, sources in self.__templates.items():
@@ -233,7 +256,7 @@ class Builder:
         with open(dst_path, "wt+", encoding="utf8") as f:
             f.write(html)
 
-        click.echo("done")
+        file_status_done()
 
     def __remove_page(self, file):
         file_status(file, Diff.REMOVED)
@@ -243,11 +266,13 @@ class Builder:
         self.__templates_remove_source(file)
 
         try:
-            os.remove(self.__output_dir / path)
+            os.remove(self.output_dir / path)
             click.echo("done")
         except FileNotFoundError:
             print()
             log.warn(f"Failed to remove {path}: file not found")
+
+        file_status_done()
 
     def __copy_static_files(self):
         created = list()
@@ -274,7 +299,7 @@ class Builder:
             log.info(f"Static environment updated: no changes")
             return
 
-        click.echo("Copying static files ...")
+        click.echo("Copying static files:")
 
         for file in created:
             self.__copy_static_file(file, Diff.CREATED)
@@ -288,26 +313,30 @@ class Builder:
     def __copy_static_file(self, file, modified):
         file_status(file, modified)
 
-        dest = self.__output_dir / "_static" / file
+        dest = self.static_output_dir / file
 
         os.makedirs(dest.parent, exist_ok=True)
-        shutil.copy(self.__static_dir / file, dest)
+        shutil.copy(self.static_dir / file, dest)
 
         click.echo("done")
+
+        file_status_done()
 
     def __remove_static_file(self, file):
         file_status(file, Diff.REMOVED)
 
         try:
-            os.remove(self.__output_dir / "_static" / file)
+            os.remove(self.static_output_dir / file)
             click.echo("done")
         except FileNotFoundError:
             print()
             log.warn(f"Failed to remove {file}: file not found")
 
+        file_status_done()
+
     def __find_template_file(self):
         directory, name = os.path.split(self.__md.template)
-        directory = self.__templates_dir / directory
+        directory = self.templates_dir / directory
 
         if not directory.is_dir():
             log.error(f"No such template : {self.__md.template}")
@@ -324,4 +353,4 @@ class Builder:
         return path
 
     def __clear_output_directory(self):
-        cleartree(self.__output_dir)
+        cleartree(self.output_dir)

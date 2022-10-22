@@ -1,8 +1,19 @@
 import click
 
 from . import log
+from .snapshot import Diff
+from .utils import file_status, file_status_done
 
-__all__ = ["before_build", "after_build", "before_plugin", "after_plugin", "log"]
+__all__ = [
+    "before_build",
+    "after_build",
+    "before_plugin",
+    "after_plugin",
+    "setup",
+    "Diff",
+    "file_status",
+    "file_status_done",
+]
 
 
 class _ModuleEvents:
@@ -75,11 +86,12 @@ class _ModuleActions:
 
 
 class PluginScheduler:
+    __setup = []
     __events = {"build!": _ModuleEvents()}
     __actions = {}
 
-    context = None
-    config = None
+    __context = None
+    __config = None
 
     @classmethod
     def events(cls, module):
@@ -116,6 +128,12 @@ class PluginScheduler:
         cls.events(plugin_name)
 
     @classmethod
+    def register_setup(cls, callback):
+        plugin_name = callback.__module__.removesuffix("_komoe_plugin")
+
+        cls.__setup.append((plugin_name, callback))
+
+    @classmethod
     def build_started(cls):
         cls.notify("build!", "start")
 
@@ -124,15 +142,112 @@ class PluginScheduler:
         cls.notify("build!", "end")
 
     @classmethod
+    def set_context(cls, context):
+        cls.__context = BuilderProxy(context)
+
+    @classmethod
+    def set_config(cls, config):
+        cls.__config = config
+
+    @classmethod
     def notify(cls, module, event):
         for action in cls.__events[module].on(event):
             if not action.module.started:
                 cls.notify(action.module.name, "start")
 
-            action(cls.context, cls.config.get(action.module.name, {}))
+            cls.__context.log.context = action.module.name
+            action(cls.__context, cls.__config.get(action.module.name, {}))
 
             if action.module.ended:
                 cls.notify(action.module.name, "end")
+
+    @classmethod
+    def setup(cls):
+        for module, callback in cls.__setup:
+            cls.__context.log.context = module
+            callback(cls.__context, cls.__config.get(module, {}))
+
+
+class LogProxy:
+    def __init__(self):
+        self.__context = None
+
+    @property
+    def context(self):
+        return self.__context
+
+    @context.setter
+    def context(self, value):
+        self.__context = value
+
+    def error(self, message):
+        log.error(f"{self.context}: {message}")
+
+    def warn(self, message):
+        log.warn(f"{self.context}: {message}")
+
+    def info(self, message):
+        log.info(f"{self.context}: {message}")
+
+
+class BuilderProxy:
+    def __init__(self, builder):
+        self.__builder = builder
+        self.__log = LogProxy()
+
+    @property
+    def log(self):
+        return self.__log
+
+    @property
+    def echo(self):
+        return click.echo
+
+    def fatal(self, message=None):
+        raise click.ClickException(
+            f"plugin {self.__log.context} aborted the build"
+            + ("" if message is None else ": " + message)
+        )
+
+    def snapshot_register(self, name, path):
+        return self.__builder.snapshot_register(name, path)
+
+    def snapshot_current(self, name):
+        return self.__builder.snapshot_current(name)
+
+    def snapshot_old(self, name):
+        return self.__builder.snapshot_old(name)
+
+    def snapshot_diff(self, name):
+        return self.__builder.snapshot_diff(name)
+
+    @property
+    def cache_dir(self):
+        return self.__builder.cache_dir
+
+    @property
+    def output_dir(self):
+        return self.__builder.output_dir
+
+    @property
+    def static_output_dir(self):
+        return self.__builder.static_output_dir
+
+    @property
+    def source_dir(self):
+        return self.__builder.source_dir
+
+    @property
+    def templates_dir(self):
+        return self.__builder.templates_dir
+
+    @property
+    def static_dir(self):
+        return self.__builder.static_dir
+
+
+def setup(func):
+    PluginScheduler.register_setup(func)
 
 
 def before_build(func):

@@ -17,7 +17,11 @@ def file_status(filename, diff):
             tag = " - "
 
     click.secho(tag, nl=False, bold=True)
-    click.echo(f"{filename} ... ", nl=False)
+    click.echo(f"{filename} … ", nl=False)
+
+
+def file_status_done():
+    click.echo("\x1b[2D✓")
 
 
 def cleartree(path):

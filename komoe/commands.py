@@ -2,7 +2,7 @@ import click
 import os
 from pathlib import Path
 
-from . import template
+from . import template, __version__
 from .config import ProjectConfig
 from .builder import Builder
 
@@ -77,6 +77,11 @@ def build(project_file, project_dir, fresh):
         raise click.ClickException("project file not found")
 
     config = ProjectConfig.from_file(config_path)
+
+    if config.minimum_required_version > __version__:
+        raise click.ClickException(
+            f"The project requires at least Komoe v{config.minimum_required_version}"
+        )
 
     builder = Builder(config, config_path.parent, fresh=fresh)
 

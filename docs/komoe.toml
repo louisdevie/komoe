@@ -1,0 +1,17 @@
+# Configuration for KOMOE static site generator.
+
+komoe_require = '0.0.0'
+
+[project]
+name = 'Komoe'
+
+[build]
+source = 'source'
+templates = 'templates'
+static = 'static'
+output = 'build'
+
+[plugin.sass]
+script = "../../komoe_sass/komoe_sass/__init__.py"
+config.path = "style"
+config.command = "sassc {input} {output}"

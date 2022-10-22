@@ -9,6 +9,11 @@
             "name": "App",
             "path": "komoe",
             "folder_exclude_patterns": ["__pycache__"],
+        },
+        {
+            "name": "Website",
+            "path": "docs",
+            "folder_exclude_patterns": [".cache", "build"],
         }
     ]
 }

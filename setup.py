@@ -4,7 +4,7 @@ with open("README.md", "rt", encoding="utf8") as f:
     README = f.read()
 
 setup(
-    name="KOMOE",
+    name="Komoe",
     version="0.1.0",
     description="A static site generator",
     long_description=README,
@@ -14,7 +14,7 @@ setup(
     url="https://github.com/louisdevie/komoe",
     packages=["komoe"],
     classifiers=[
-        "Development Status :: 1 - Planning",
+        "Development Status :: 4 - Beta",
         "License :: OSI Approved :: MIT License",
         "Programming Language :: Python :: 3.10",
     ],

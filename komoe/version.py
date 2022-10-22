@@ -69,3 +69,15 @@ class Version:
                 return self.__minor < other.__minor
         else:
             return self.__major < other.__major
+
+    def __repr__(self):
+        return f"{type(self).__module__}.{type(self).__qualname__}({self.major}, {self.minor}, {self.patch})"
+
+    def __str__(self):
+        if self.patch:
+            return f"{self.major}.{self.minor}.{self.patch}"
+        else:
+            if self.minor:
+                return f"{self.major}.{self.minor}"
+            else:
+                return f"{self.major}"

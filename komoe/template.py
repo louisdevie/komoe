@@ -50,6 +50,6 @@ def create_new_project(path, name):
     os.mkdir(path / "templates")
 
     with open(path / "templates" / "base.j2.html", "wt+", encoding="utf8") as f:
-        f.write(BASE.format(name))
+        f.write(BASE)
 
     os.mkdir(path / "static")
