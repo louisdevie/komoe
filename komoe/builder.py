@@ -157,15 +157,14 @@ class Builder:
         same = list()
 
         for file, diff in self.snapshot_diff("source").items():
-            match diff:
-                case Diff.CREATED:
-                    created.append(file)
-                case Diff.DELETED:
-                    removed.append(file)
-                case Diff.MODIFIED:
-                    modified.append(file)
-                case Diff.SAME:
-                    same.append(file)
+            if diff == Diff.CREATED:
+                created.append(file)
+            elif diff == Diff.DELETED:
+                removed.append(file)
+            elif diff == Diff.MODIFIED:
+                modified.append(file)
+            elif diff == Diff.SAME:
+                same.append(file)
 
         if same:
             need_refresh = list()
@@ -280,13 +279,12 @@ class Builder:
         removed = list()
 
         for file, diff in self.snapshot_diff("static").items():
-            match diff:
-                case Diff.CREATED:
-                    created.append(file)
-                case Diff.DELETED:
-                    removed.append(file)
-                case Diff.MODIFIED:
-                    modified.append(file)
+            if diff == Diff.CREATED:
+                created.append(file)
+            elif diff == Diff.DELETED:
+                removed.append(file)
+            elif diff == Diff.MODIFIED:
+                modified.append(file)
 
         env_info = ", ".join(
             ([f"{len(created)} added"] if created else [])

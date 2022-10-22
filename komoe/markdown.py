@@ -74,7 +74,7 @@ class TemplatePreprocessor(markdown.preprocessors.Preprocessor):
             new_lines.pop(0)
 
         if new_lines[0].startswith("@"):
-            self.md.komoe.template = new_lines[0].removeprefix("@")
+            self.md.komoe.template = new_lines[0][1:]
             new_lines.pop(0)
 
         return new_lines

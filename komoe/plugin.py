@@ -108,7 +108,7 @@ class PluginScheduler:
 
     @classmethod
     def subscribe(cls, module, event, callback):
-        plugin_name = callback.__module__.removesuffix("_komoe_plugin")
+        plugin_name = callback.__module__.replace("_komoe_plugin", "")
         action_name = callback.__name__
 
         if plugin_name == module:
@@ -129,7 +129,7 @@ class PluginScheduler:
 
     @classmethod
     def register_setup(cls, callback):
-        plugin_name = callback.__module__.removesuffix("_komoe_plugin")
+        plugin_name = callback.__module__.replace("_komoe_plugin", "")
 
         cls.__setup.append((plugin_name, callback))
 

@@ -6,15 +6,14 @@ from .snapshot import Diff
 
 def file_status(filename, diff):
     tag = "   "
-    match diff:
-        case Diff.CREATED:
-            tag = " + "
-        case Diff.MODIFIED:
-            tag = " ~ "
-        case Diff.SAME:
-            tag = " = "
-        case Diff.DELETED:
-            tag = " - "
+    if diff == Diff.CREATED:
+        tag = " + "
+    elif diff == Diff.MODIFIED:
+        tag = " ~ "
+    elif diff == Diff.SAME:
+        tag = " = "
+    elif diff == Diff.DELETED:
+        tag = " - "
 
     click.secho(tag, nl=False, bold=True)
     click.echo(f"{filename} … ", nl=False)

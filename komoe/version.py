@@ -11,18 +11,17 @@ class Version:
         except ValueError:
             raise click.Exception("invalid version format")
 
-        match len(nums):
-            case 1:
-                return cls(nums[0], 0, 0)
+        if len(nums) == 1:
+            return cls(nums[0], 0, 0)
 
-            case 2:
-                return cls(nums[0], nums[1], 0)
+        elif len(nums) == 2:
+            return cls(nums[0], nums[1], 0)
 
-            case 3:
-                return cls(nums[0], nums[1], nums[2])
+        elif len(nums) == 3:
+            return cls(nums[0], nums[1], nums[2])
 
-            case _:
-                raise click.Exception("invalid version format")
+        else:
+            raise click.Exception("invalid version format")
 
     @property
     def major(self):
