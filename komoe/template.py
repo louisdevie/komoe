@@ -3,7 +3,7 @@ import os
 CONFIG = """\
 # Configuration for KOMOE static site generator.
 
-komoe_require = '0.2.1'
+komoe_require = '0.2.2'
 
 [project]
 name = '{0}'
