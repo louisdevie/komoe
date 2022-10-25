@@ -85,4 +85,5 @@ class TemplatePreprocessor(markdown.preprocessors.Preprocessor):
 
 class TitleTreeprocessor(markdown.treeprocessors.Treeprocessor):
     def run(self, root):
-        self.md.komoe.document_title = root.find("h1").text
+        h1 = root.find("h1")
+        self.md.komoe.document_title = h1.text if h1 else ""
