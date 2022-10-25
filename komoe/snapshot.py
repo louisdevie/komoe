@@ -27,7 +27,7 @@ def _scan(root, path, ignore_hidden, ignore_patterns):
             files[str(e.relative_to(root))] = int(e.stat().st_mtime)
 
         elif e.is_dir():
-            files |= _scan(root, e, ignore_hidden, ignore_patterns)
+            files.update(_scan(root, e, ignore_hidden, ignore_patterns))
 
     return files
 

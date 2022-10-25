@@ -333,21 +333,17 @@ class Builder:
         os.makedirs(dest.parent, exist_ok=True)
         shutil.copy(self.static_dir / file, dest)
 
-        click.echo("done")
-
         file_status_done()
 
     def __remove_static_file(self, file):
-        file_status(file, Diff.REMOVED)
+        file_status(file, Diff.DELETED)
 
         try:
             os.remove(self.static_output_dir / file)
-            click.echo("done")
+            file_status_done()
         except FileNotFoundError:
             print()
             log.warn(f"Failed to remove {file}: file not found")
-
-        file_status_done()
 
     def __find_template_file(self):
         directory, name = os.path.split(self.__md.template)
@@ -368,4 +364,5 @@ class Builder:
         return path
 
     def __clear_output_directory(self):
-        cleartree(self.output_dir)
+        if self.output_dir.is_dir():
+            cleartree(self.output_dir)
