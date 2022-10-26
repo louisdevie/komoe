@@ -275,7 +275,7 @@ class Builder:
         file_status_done()
 
     def __remove_page(self, file):
-        file_status(file, Diff.REMOVED)
+        file_status(file, Diff.DELETED)
 
         _, path = self.__page_location(file)
 
