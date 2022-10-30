@@ -1,30 +1,92 @@
 import markdown
+from abc import ABC, abstractmethod
+
+from . import log
 
 
 class Markdown:
     def __init__(self):
-        self.__md = markdown.Markdown(
-            extensions=[
-                MarkdownExtension(),
-                "attr_list",
-                "fenced_code",
-                "footnotes",
-                "tables",
-                "admonition",
-                "meta",
-                "sane_lists",
-                "smarty",
-                "toc",
-            ]
-        )
-        self.__md.komoe = self
+        self.__md = None
 
         self.__template = None
         self.__title = ""
 
+        self.__default_extensions = [
+            "attr_list",
+            "fenced_code",
+            "footnotes",
+            "tables",
+            "admonition",
+            "meta",
+            "sane_lists",
+            "smarty",
+            "toc",
+        ]
+        self.__additional_extensions = list()
+        self.__extensions_config = dict()
+
+    def init(self):
+        extensions = (
+            [MarkdownExtension()]
+            + self.__default_extensions
+            + [
+                ext.instanciate(self.__extensions_config)
+                for ext in self.__additional_extensions
+            ]
+        )
+        print(extensions)
+        print(self.__extensions_config)
+        self.__md = markdown.Markdown(
+            extensions=extensions,
+            extension_configs=self.__extensions_config,
+        )
+        self.__md.komoe = self
+
     def render(self, text):
+        if self.__md is None:
+            raise RuntimeError("Markdown renderer not initialised yet")
+
         self.__md.reset()
         return self.__md.convert(text)
+
+    def disable_default_extension(self, name):
+        self.__default_extensions.remove(name)
+
+    def add_extension(self, extension, config_name=None, **config):
+        if isinstance(extension, str):
+            if config_name is not None:
+                log.warn(
+                    f"`config_name` can only be used with class extensions (extension {extension})"
+                )
+            self.__additional_extensions.append(BasicMarkdownPluginExtension(extension))
+            self.configure_extension(extension, config)
+
+        elif issubclass(extension, markdown.Extension):
+            self.__additional_extensions.append(
+                ClassMarkdownPluginExtension(extension, config, config_name)
+            )
+
+        elif isinstance(extension, markdown.Extension):
+            if config_name is not None:
+                log.warn(
+                    f"`config_name` can only be used with class extensions (extension {extension})"
+                )
+            if config:
+                log.warn(
+                    f"an instance extension cannot be re-configured (extension {type(extension)})"
+                )
+            self.__additional_extensions.append(BasicMarkdownPluginExtension(extension))
+
+        else:
+            raise TypeError(
+                "`extension` must be a string, a class derived from `markdown.Extension` or an instance of it"
+            )
+
+    def configure_extension(self, name, **config):
+        if name in self.__extensions_config:
+            self.__extensions_config[name].update(config)
+        else:
+            self.__extensions_config[name] = config
 
     @property
     def template(self):
@@ -45,6 +107,35 @@ class Markdown:
     @property
     def metadata(self):
         return self.__md.Meta
+
+
+class PluginMarkdownExtension(ABC):
+    @abstractmethod
+    def instanciate(self, config):
+        ...
+
+
+class BasicMarkdownPluginExtension(PluginMarkdownExtension):
+    def __init__(self, name_or_instance):
+        self.__obj = name_or_instance
+
+    def instanciate(self, config):
+        return self.__obj
+
+
+class ClassMarkdownPluginExtension(PluginMarkdownExtension):
+    def __init__(self, ext, config, name):
+        self.__base_config = config
+        self.__class = ext
+        self.__name = name
+
+    def instanciate(self, config):
+        cfg = dict()
+        if self.__name is not None:
+            if self.__name in config:
+                cfg.update(config[self.__name])
+        cfg.update(self.__base_config)
+        return self.__class(**cfg)
 
 
 class MarkdownExtension(markdown.Extension):

@@ -57,6 +57,10 @@ class Builder:
     def static_dir(self):
         return self.__base_dir / self.__config.static_directory
 
+    @property
+    def markdown(self):
+        return self.__md
+
     def build(self):
         PluginScheduler.set_context(self)
 
@@ -69,6 +73,8 @@ class Builder:
             }
         )
         PluginScheduler.setup()
+
+        self.__md.init()
 
         self.__scan_directories()
 

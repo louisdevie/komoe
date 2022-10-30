@@ -87,6 +87,7 @@ class _ModuleActions:
 
 class PluginScheduler:
     __setup = []
+    __cleanup = []
     __events = {"build!": _ModuleEvents()}
     __actions = {}
 
@@ -140,6 +141,15 @@ class PluginScheduler:
         cls.__setup.append((plugin_name, callback))
 
     @classmethod
+    def register_cleanup(cls, callback):
+        plugin_name = cls.__context.get_package_alias(
+            callback.__module__,
+            callback.__module__.replace("_komoe_plugin", ""),
+        )
+
+        cls.__cleanup.append((plugin_name, callback))
+
+    @classmethod
     def build_started(cls):
         cls.notify("build!", "start")
 
@@ -177,6 +187,14 @@ class PluginScheduler:
                 cls.__config.get(module, {}),
             )
 
+    @classmethod
+    def cleanup(cls):
+        for module, callback in cls.__cleanup:
+            callback(
+                BuilderProxy(cls.__context, module),
+                cls.__config.get(module, {}),
+            )
+
 
 class LogProxy:
     def __init__(self, ctx):
@@ -196,10 +214,25 @@ class LogProxy:
         log.info(f"{self.context}: {message}")
 
 
+class MarkdownProxy:
+    def __init__(self, markdown):
+        self.__md = markdown
+
+    def disable_default_extension(self, name):
+        self.__md.disable_default_extension(name)
+
+    def add_extension(self, extension, config_name=None, **config):
+        self.__md.add_extension(extension, config_name, **config)
+
+    def configure_extension(self, name, **config):
+        self.__md.configure_extension(name, **config)
+
+
 class BuilderProxy:
     def __init__(self, builder, log_ctx):
         self.__builder = builder
         self.__log = LogProxy(log_ctx)
+        self.__md = MarkdownProxy(self.__builder.markdown)
 
     @property
     def log(self):
@@ -228,6 +261,10 @@ class BuilderProxy:
         return self.__builder.snapshot_diff(name)
 
     @property
+    def markdown(self):
+        return self.__md
+
+    @property
     def cache_dir(self):
         return self.__builder.cache_dir
 
@@ -254,6 +291,10 @@ class BuilderProxy:
 
 def setup(func):
     PluginScheduler.register_setup(func)
+
+
+def cleanup(func):
+    PluginScheduler.register_cleanup(func)
 
 
 def before_build(func):
