@@ -1,3 +1,6 @@
+import click
+
+
 class Version:
     def __init__(self, major, minor, patch):
         self.__major = major
@@ -9,7 +12,7 @@ class Version:
         try:
             nums = [int(num) for num in string.split(".")]
         except ValueError:
-            raise click.Exception("invalid version format")
+            raise click.ClickException("invalid version format")
 
         if len(nums) == 1:
             return cls(nums[0], 0, 0)
@@ -21,7 +24,7 @@ class Version:
             return cls(nums[0], nums[1], nums[2])
 
         else:
-            raise click.Exception("invalid version format")
+            raise click.ClickException("invalid version format")
 
     @property
     def major(self):

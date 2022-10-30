@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 from . import log
-from .plugin import PluginScheduler, LogProxy
+from .plugin import PluginScheduler
 from .snapshot import Snapshot, Diff
 from .markdown import Markdown
 from .utils import file_status, file_status_done, cleartree
@@ -206,7 +206,7 @@ class Builder:
         if env_info:
             log.info(f"Document environment updated: {env_info}")
         else:
-            log.info(f"Document environment updated: no changes")
+            log.info("Document environment updated: no changes")
             return
 
         click.echo("Rendering pages:")
@@ -242,7 +242,9 @@ class Builder:
 
         content = self.__md.render(md)
 
-        template_path = str(self.__find_template_file().relative_to(self.templates_dir))
+        template_path = str(
+            self.__find_template_file(file).relative_to(self.templates_dir)
+        )
 
         same_template = False
         for old_template, sources in self.__templates.items():
@@ -285,7 +287,9 @@ class Builder:
 
         _, path = self.__page_location(file)
 
-        self.__templates_remove_source(file)
+        for template, sources in self.__templates.items():
+            if str(file) in sources:
+                self.__templates[template].remove(str(file))
 
         try:
             os.remove(self.output_dir / path)
@@ -317,7 +321,7 @@ class Builder:
         if env_info:
             log.info(f"Static environment updated: {env_info}")
         else:
-            log.info(f"Static environment updated: no changes")
+            log.info("Static environment updated: no changes")
             return
 
         click.echo("Copying static files:")
@@ -351,7 +355,7 @@ class Builder:
             print()
             log.warn(f"Failed to remove {file}: file not found")
 
-    def __find_template_file(self):
+    def __find_template_file(self, file):
         directory, name = os.path.split(self.__md.template)
         directory = self.templates_dir / directory
 

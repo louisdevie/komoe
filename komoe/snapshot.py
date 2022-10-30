@@ -10,7 +10,7 @@ class Diff(Enum):
 
 
 def _scan(root, path, ignore_hidden, ignore_patterns):
-    files = dict()
+    files = {}
 
     for e in path.iterdir():
         if ignore_hidden and e.name.startswith("."):
@@ -48,7 +48,7 @@ class Snapshot:
 
     @classmethod
     def load(cls, text):
-        data = dict()
+        data = {}
         for entry in text.split("\n"):
             if len(entry) == 0:
                 continue

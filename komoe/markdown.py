@@ -1,3 +1,5 @@
+"""Interface to the markdown library."""
+
 import markdown
 from abc import ABC, abstractmethod
 
@@ -5,6 +7,8 @@ from . import log
 
 
 class Markdown:
+    """Wrappper around `markdown.Markdown`."""
+
     def __init__(self):
         self.__md = None
 
@@ -22,12 +26,14 @@ class Markdown:
             "smarty",
             "toc",
         ]
-        self.__additional_extensions = list()
-        self.__extensions_config = dict()
+        self.__additional_extensions = []
+        self.__extensions_config = {}
 
     def init(self):
+        """Initialises the internal `markdown.Markdown` class."""
+
         extensions = (
-            [MarkdownExtension()]
+            [_MarkdownExtension()]
             + self.__default_extensions
             + [
                 ext.instanciate(self.__extensions_config)
@@ -42,14 +48,32 @@ class Markdown:
         )
         self.__md.komoe = self
 
-    def render(self, text):
+    def render(self, text: str) -> str:
+        """Convert Markdown to HTML.
+
+        Parameters
+          text: the markdown inputt.
+
+        Returns
+          the HTML output.
+        """
+
         if self.__md is None:
             raise RuntimeError("Markdown renderer not initialised yet")
 
         self.__md.reset()
         return self.__md.convert(text)
 
-    def disable_default_extension(self, name):
+    def disable_default_extension(self, name: str):
+        """Disables a default extension.
+
+        Parameters
+          name: the name of the extension to disable. May be one of "attr_list",
+                "fenced_code", "footnotes", "tables", "admonition", "meta",
+                "sane_lists", "smarty" or "toc". For more information, see the
+                documentation at https://python-markdown.github.io/extensions/.
+        """
+
         self.__default_extensions.remove(name)
 
     def add_extension(self, extension, config_name=None, **config):
@@ -58,12 +82,14 @@ class Markdown:
                 log.warn(
                     f"`config_name` can only be used with class extensions (extension {extension})"
                 )
-            self.__additional_extensions.append(BasicMarkdownPluginExtension(extension))
-            self.configure_extension(extension, config)
+            self.__additional_extensions.append(
+                _BasicMarkdownPluginExtension(extension)
+            )
+            self.configure_extension(extension, **config)
 
         elif issubclass(extension, markdown.Extension):
             self.__additional_extensions.append(
-                ClassMarkdownPluginExtension(extension, config, config_name)
+                _ClassMarkdownPluginExtension(extension, config, config_name)
             )
 
         elif isinstance(extension, markdown.Extension):
@@ -75,11 +101,14 @@ class Markdown:
                 log.warn(
                     f"an instance extension cannot be re-configured (extension {type(extension)})"
                 )
-            self.__additional_extensions.append(BasicMarkdownPluginExtension(extension))
+            self.__additional_extensions.append(
+                _BasicMarkdownPluginExtension(extension)
+            )
 
         else:
             raise TypeError(
-                "`extension` must be a string, a class derived from `markdown.Extension` or an instance of it"
+                "`extension` must be a string, a class derived from"
+                "`markdown.Extension` or an instance of it"
             )
 
     def configure_extension(self, name, **config):
@@ -109,13 +138,13 @@ class Markdown:
         return self.__md.Meta
 
 
-class PluginMarkdownExtension(ABC):
+class _PluginMarkdownExtension(ABC):
     @abstractmethod
     def instanciate(self, config):
         ...
 
 
-class BasicMarkdownPluginExtension(PluginMarkdownExtension):
+class _BasicMarkdownPluginExtension(_PluginMarkdownExtension):
     def __init__(self, name_or_instance):
         self.__obj = name_or_instance
 
@@ -123,7 +152,7 @@ class BasicMarkdownPluginExtension(PluginMarkdownExtension):
         return self.__obj
 
 
-class ClassMarkdownPluginExtension(PluginMarkdownExtension):
+class _ClassMarkdownPluginExtension(_PluginMarkdownExtension):
     def __init__(self, ext, config, name):
         self.__base_config = config
         self.__class = ext
@@ -138,18 +167,18 @@ class ClassMarkdownPluginExtension(PluginMarkdownExtension):
         return self.__class(**cfg)
 
 
-class MarkdownExtension(markdown.Extension):
+class _MarkdownExtension(markdown.Extension):
     def extendMarkdown(self, md):
         self.__md = md
         self.__md.registerExtension(self)
 
         self.__md.preprocessors.register(
-            TemplatePreprocessor(self.__md),
+            _TemplatePreprocessor(self.__md),
             "komoe.preprocessor.template",
             200,
         )
         self.__md.treeprocessors.register(
-            TitleTreeprocessor(self.__md), "komoe.treeprocessor.title", 200
+            _TitleTreeprocessor(self.__md), "komoe.treeprocessor.title", 200
         )
 
     def reset(self):
@@ -157,7 +186,7 @@ class MarkdownExtension(markdown.Extension):
         self.__md.document_title = ""
 
 
-class TemplatePreprocessor(markdown.preprocessors.Preprocessor):
+class _TemplatePreprocessor(markdown.preprocessors.Preprocessor):
     def run(self, lines):
         new_lines = lines.copy()
 
@@ -174,7 +203,7 @@ class TemplatePreprocessor(markdown.preprocessors.Preprocessor):
         self.md.komoe.template = None
 
 
-class TitleTreeprocessor(markdown.treeprocessors.Treeprocessor):
+class _TitleTreeprocessor(markdown.treeprocessors.Treeprocessor):
     def run(self, root):
         h1 = root.find("h1")
         self.md.komoe.document_title = h1.text if h1 else ""

@@ -1,8 +1,11 @@
+"""Interface to the Komoe build process for plugins."""
+
 import click
 
 from . import log
 from .snapshot import Diff
-from .utils import file_status, file_status_done
+from .utils import file_status, file_status_done, proxy
+from .markdown import Markdown
 
 __all__ = [
     "before_build",
@@ -96,13 +99,13 @@ class PluginScheduler:
 
     @classmethod
     def events(cls, module):
-        if not module in cls.__events:
+        if module not in cls.__events:
             cls.__events[module] = _ModuleEvents()
         return cls.__events[module]
 
     @classmethod
     def actions(cls, module):
-        if not module in cls.__actions:
+        if module not in cls.__actions:
             cls.__actions[module] = _ModuleActions(module)
 
         return cls.__actions[module]
@@ -117,7 +120,7 @@ class PluginScheduler:
 
         if plugin_name == module:
             log.error(
-                f"a plugin can't subscribe to itself ({plugin_name}.{callback.__name__})"
+                f"a plugin can't subscribe to itself ({plugin_name}.{action_name})"
             )
             raise click.ClickException("failed to load plugins")
 
@@ -204,12 +207,15 @@ class LogProxy:
     def context(self):
         return self.__context
 
+    @proxy(log.error)
     def error(self, message):
         log.error(f"{self.context}: {message}")
 
+    @proxy(log.warn)
     def warn(self, message):
         log.warn(f"{self.context}: {message}")
 
+    @proxy(log.warn)
     def info(self, message):
         log.info(f"{self.context}: {message}")
 
@@ -218,12 +224,15 @@ class MarkdownProxy:
     def __init__(self, markdown):
         self.__md = markdown
 
+    @proxy(Markdown.disable_default_extension)
     def disable_default_extension(self, name):
         self.__md.disable_default_extension(name)
 
+    @proxy(Markdown.disable_default_extension)
     def add_extension(self, extension, config_name=None, **config):
         self.__md.add_extension(extension, config_name, **config)
 
+    @proxy(Markdown.disable_default_extension)
     def configure_extension(self, name, **config):
         self.__md.configure_extension(name, **config)
 
