@@ -229,12 +229,13 @@ class Builder:
         return (
             self.source_dir / file,
             self.output_dir / dest,
+            dest,
         )
 
     def __render_page(self, file, modified):
-        file_status(file, modified)
+        src_path, dst_path, dst = self.__page_location(file)
 
-        src_path, dst_path = self.__page_location(file)
+        file_status(dst, modified)
 
         depth = len(Path(file).parts) - 1
         rel_root = "/".join([".."] * depth) if depth else "."
@@ -285,9 +286,9 @@ class Builder:
         file_status_done()
 
     def __remove_page(self, file):
-        file_status(file, Diff.DELETED)
+        _, path, dst = self.__page_location(file)
 
-        _, path = self.__page_location(file)
+        file_status(dst, Diff.DELETED)
 
         for template, sources in self.__templates.items():
             if str(file) in sources:
