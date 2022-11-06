@@ -93,6 +93,8 @@ class Builder:
 
         self.__dump_cache_data()
 
+        PluginScheduler.cleanup()
+
     def snapshot_register(self, name, path):
         self.__snapshots[name] = {"path": self.__base_dir / path}
 
@@ -264,7 +266,7 @@ class Builder:
 
         title = self.__md.document_title
         if "title" in self.__md.metadata:
-            title = self.__md.metadata["title"][0]
+            title = " — ".join(self.__md.metadata["title"])
 
         shared = {
             "TITLE": title,

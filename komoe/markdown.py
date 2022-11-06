@@ -40,8 +40,7 @@ class Markdown:
                 for ext in self.__additional_extensions
             ]
         )
-        print(extensions)
-        print(self.__extensions_config)
+
         self.__md = markdown.Markdown(
             extensions=extensions,
             extension_configs=self.__extensions_config,
@@ -206,4 +205,4 @@ class _TemplatePreprocessor(markdown.preprocessors.Preprocessor):
 class _TitleTreeprocessor(markdown.treeprocessors.Treeprocessor):
     def run(self, root):
         h1 = root.find("h1")
-        self.md.komoe.document_title = h1.text if h1 else ""
+        self.md.komoe.document_title = h1.text if h1 is not None else ""

@@ -228,11 +228,11 @@ class MarkdownProxy:
     def disable_default_extension(self, name):
         self.__md.disable_default_extension(name)
 
-    @proxy(Markdown.disable_default_extension)
+    @proxy(Markdown.add_extension)
     def add_extension(self, extension, config_name=None, **config):
         self.__md.add_extension(extension, config_name, **config)
 
-    @proxy(Markdown.disable_default_extension)
+    @proxy(Markdown.configure_extension)
     def configure_extension(self, name, **config):
         self.__md.configure_extension(name, **config)
 
