@@ -56,7 +56,8 @@ def new(path, project_name):
     help="Build the project in that directory",
 )
 @click.option("--fresh", is_flag=True, help="Regenerates all content")
-def build(project_file, project_dir, fresh):
+@click.option("--watch", is_flag=True, help="Rebuild as files change")
+def build(project_file, project_dir, fresh, watch):
     """Build a project
 
     If no project is specified, the project in the current directory will be built.
