@@ -5,7 +5,7 @@ with open("README.md", "rt", encoding="utf8") as f:
 
 setup(
     name="Komoe",
-    version="0.3.1",
+    version="0.4.0",
     description="A static site generator",
     long_description=README,
     long_description_content_type="text/markdown",
@@ -27,10 +27,12 @@ setup(
     ],
     python_requires=">=3.8",
     install_requires=[
-        "Jinja2>=3.1.2",
+        "Jinja2==3.1.2",
+        "Jinja2-TD==3.1-post2",
         "Markdown==3.4.1",
         "click>=8.1.3",
         "tomli>=2.0.1",
+        "watchfiles>=0.18.1",
     ],
     entry_points={
         "console_scripts": [

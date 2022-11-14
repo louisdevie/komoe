@@ -1,10 +1,14 @@
 import click
 import os
 from pathlib import Path
+import traceback
+
+import watchfiles
 
 from . import template, __version__
 from .config import ProjectConfig
 from .builder import Builder
+from . import log
 
 
 @click.group()
@@ -77,13 +81,67 @@ def build(project_file, project_dir, fresh, watch):
     else:
         raise click.ClickException("project file not found")
 
-    config = ProjectConfig.from_file(config_path)
+    config = load_config(config_path)
+
+    builder = Builder(config, config_path.parent, fresh=fresh)
+    builder.build()
+
+    if watch:
+        while True:
+            try:
+                click.echo("Waiting for a file to change ...")
+                for changes in watchfiles.watch(config_path.parent):
+                    need_rebuild = False
+                    force_fresh = False
+                    for _, file in changes:
+                        path = Path(file)
+
+                        if (not path.is_relative_to(builder.output_dir)) and (
+                            not path.is_relative_to(builder.cache_dir)
+                        ):
+                            # source files
+                            if any(
+                                path.is_relative_to(srcdir)
+                                for srcdir in builder.snapshot_dirs
+                            ):
+                                need_rebuild = True
+
+                            # project file and plugins
+                            elif path.name == "komoe.toml" or path.suffix == ".py":
+                                need_rebuild = True
+                                force_fresh = True
+
+                    if need_rebuild:
+                        if force_fresh:
+                            log.info("The project file or a plugin changed")
+
+                        builder = Builder(
+                            config, config_path.parent, fresh=fresh or force_fresh
+                        )
+                        builder.build()
+
+                        click.echo("Waiting for a file to change ...")
+
+            except KeyboardInterrupt:
+                click.echo("\nWatch stoppped")
+                break
+
+            except Exception as e:
+                click.secho(
+                    "".join(traceback.format_tb(e.__traceback__)), nl=False, dim=True
+                )
+                log.error(f"{type(e).__name__}: {e}")
+
+    else:
+        click.echo("✨ All done ! ✨")
+
+
+def load_config(path):
+    config = ProjectConfig.from_file(path)
 
     if config.minimum_required_version > __version__:
         raise click.ClickException(
             f"The project requires at least Komoe v{config.minimum_required_version}"
         )
 
-    builder = Builder(config, config_path.parent, fresh=fresh)
-
-    builder.build()
+    return config
