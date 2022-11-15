@@ -2,4 +2,4 @@
 
 from .version import Version as _v
 
-__version__ = _v(0, 3, 2)
+__version__ = _v(0, 4, 0)

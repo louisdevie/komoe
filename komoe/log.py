@@ -1,5 +1,7 @@
 import click
 
+DEBUG = False
+
 
 def error(message):
     __log("ERROR", "red", message)
@@ -11,6 +13,11 @@ def warn(message):
 
 def info(message):
     __log("INFO", None, message)
+
+
+def dbg(message):
+    if DEBUG:
+        __log("DEBUG", "cyan", message)
 
 
 def __log(level, color, message):

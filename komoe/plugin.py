@@ -52,10 +52,15 @@ class _Action:
 
     def __call__(self, context, config):
         if self.__called:
-            raise RuntimeError("Action object called twice")
+            raise RuntimeError(
+                f"Action object of module {self.module.name} called twice"
+            )
         else:
             self.__called = True
             return self.__callback(context, config)
+
+    def reload(self):
+        self.__called = False
 
     @property
     def module(self):
@@ -70,6 +75,10 @@ class _ModuleActions:
     def __init__(self, name):
         self.__actions = list()
         self.__name = name
+
+    def reload(self):
+        for action in self.__actions:
+            action.reload()
 
     def add(self, action):
         action.module = self
@@ -91,11 +100,22 @@ class _ModuleActions:
 class PluginScheduler:
     __setup = []
     __cleanup = []
-    __events = {"build!": _ModuleEvents()}
+    __events = {}
     __actions = {}
 
     __context = None
     __config = None
+
+    __scripts = []
+
+    @classmethod
+    def add_script(cls, module_name):
+        if module_name in cls.__scripts:
+            log.dbg("script {module_name} is already loaded")
+            return False
+        else:
+            cls.__scripts.append(module_name)
+            return True
 
     @classmethod
     def events(cls, module):
@@ -198,6 +218,24 @@ class PluginScheduler:
                 cls.__config.get(module, {}),
             )
 
+    @classmethod
+    def reload(cls):
+        for module_actions in cls.__actions.values():
+            module_actions.reload()
+
+    @classmethod
+    def reset(cls):
+        cls.__setup.clear()
+        cls.__cleanup.clear()
+        cls.__events.clear()
+        cls.__actions.clear()
+        cls.__scripts.clear()
+
+        cls.__context = None
+        cls.__config = None
+
+        cls.__events["build!"] = _ModuleEvents()
+
 
 class LogProxy:
     def __init__(self, ctx):
@@ -272,6 +310,10 @@ class BuilderProxy:
     @property
     def markdown(self):
         return self.__md
+
+    @property
+    def base_dir(self):
+        return self.__builder.base_dir
 
     @property
     def cache_dir(self):
