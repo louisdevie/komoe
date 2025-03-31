@@ -1,6 +1,6 @@
 import click
 
-DEBUG = False
+DEBUG = True
 
 
 def error(message):

@@ -14,4 +14,4 @@ output = 'build'
 [plugin.sass]
 package = "komoe_sass"
 config.path = "style"
-config.command = "sassc {input} {output}"
+config.command = "sassc {input} > {output}"

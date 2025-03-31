@@ -9,18 +9,17 @@
         {% endif %}
         Komoe
     </title>
-    <link rel="stylesheet" href="{{ STATIC }}/theme.css" type="text/css"></link>
+    <link rel="stylesheet"  type="text/css" href={{ static("/theme.css") }}></link>
     {% block head %}{% endblock %}
 </head>
 <body>
     <header>
-        <a href="{{ ROOT }}">
-            <img src="{{ STATIC }}/komoe.svg" alt="komoe logo">
+        <a href={{ absolute("") }}>
+            <img id="logo" alt="komoe logo" src={{ static("/komoe.svg") }}>
         </a>
-
-        <a href="{{ ROOT }}/quickstart">Quickstart</a>
-        <a href="{{ ROOT }}/docs/">Documentation</a>
-        <a href="{{ ROOT }}/about">About</a>
+        <nav>
+            {% block tabs required %}{% endblock %}
+        </nav>
     </header>
     {% block body required %}{% endblock %}
 </body>

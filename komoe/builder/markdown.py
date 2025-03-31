@@ -3,7 +3,7 @@
 import markdown
 from abc import ABC, abstractmethod
 
-from . import log
+from .. import log
 
 
 class Markdown:

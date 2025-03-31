@@ -1,1 +1,3 @@
-@home
+@quickstart
+
+# Quickstart

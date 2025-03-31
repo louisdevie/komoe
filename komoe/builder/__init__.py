@@ -1,5 +1,7 @@
+from typing import Any
+
 import click
-import importlib
+import importlib.util
 import os
 import shutil
 import sys
@@ -9,27 +11,39 @@ import json
 from pathlib import Path
 from functools import partial
 
-from . import log
-from .plugin import PluginScheduler
-from .snapshot import Snapshot, Diff
+from .paths import ProjectPaths
+from .. import log
+from ..config import ProjectConfig
+from .output import BuilderOutput
+from ..plugin import PluginScheduler
+from .snapshots import Snapshot, Diff, SnapshotRegistry
 from .markdown import Markdown
-from .utils import file_status, file_status_done, cleartree
+from ..utils import file_status, file_status_done, clear_tree
 from .doctree import DocumentTree
 from .relationships import Relationships
 
 
 class Builder:
-    def __init__(self, config, base_dir, **options):
+    __config: ProjectConfig
+    __output: BuilderOutput
+    __fresh_build: bool
+    __paths: ProjectPaths
+    __snapshots: SnapshotRegistry
+    __relationships: Relationships
+    __doctree: DocumentTree
+    __md: Markdown
+    __j2: jinja2.Environment
+    __postprocess: list[str]
+    __postprocessors: dict[str, Any]
+    __plugin_packages: dict[Any, Any]
+
+    def __init__(self, config: ProjectConfig, output: BuilderOutput, base_dir: Path, fresh: bool):
         self.__config = config
-        self.__options = options
+        self.__output = output
+        self.__fresh_build = fresh
+        self.__paths = ProjectPaths(base_dir, config)
 
-        self.__base_dir = base_dir
-
-        self.__snapshots = {
-            "source": {"path": self.source_dir},
-            "templates": {"path": self.templates_dir},
-            "static": {"path": self.static_dir},
-        }
+        self.__snapshots = SnapshotRegistry(self.__paths)
         self.__templates = Relationships()
         self.__doctree = DocumentTree()
         self.__postprocess = []
@@ -37,7 +51,7 @@ class Builder:
         self.__md = Markdown()
 
         self.__j2 = jinja2.Environment(
-            loader=jinja2.FileSystemLoader(str(self.templates_dir)),
+            loader=jinja2.FileSystemLoader(str(self.__paths.templates_dir)),
             extensions=[jinja2td.Introspection],
         )
 
@@ -46,43 +60,15 @@ class Builder:
         self.__plugin_packages = {}
 
     @property
-    def base_dir(self):
-        return self.__base_dir
-
-    @property
-    def cache_dir(self):
-        return self.__base_dir / ".cache"
-
-    @property
-    def output_dir(self):
-        return self.__base_dir / self.__config.output_directory
-
-    @property
-    def static_output_dir(self):
-        return self.output_dir / "_static"
-
-    @property
-    def source_dir(self):
-        return self.__base_dir / self.__config.source_directory
-
-    @property
-    def templates_dir(self):
-        return self.__base_dir / self.__config.templates_directory
-
-    @property
-    def static_dir(self):
-        return self.__base_dir / self.__config.static_directory
-
-    @property
-    def snapshot_dirs(self):
-        return (s["path"] for s in self.__snapshots.values())
+    def snapshot_dirs(self) -> list[os.PathLike]:
+        return self.__snapshots.tracked_dirs
 
     @property
     def markdown(self):
         return self.__md
 
     def build(self):
-        if self.__options["fresh"]:
+        if self.__fresh_build:
             PluginScheduler.reset()
         else:
             PluginScheduler.reload()
@@ -101,9 +87,9 @@ class Builder:
 
         self.__md.init()
 
-        self.__scan_directories()
+        self.__snapshots.scan_all()
 
-        if self.__options["fresh"]:
+        if self.__fresh_build:
             self.__clear_output_directory()
         else:
             self.__load_cache_data()
@@ -121,18 +107,6 @@ class Builder:
 
         PluginScheduler.cleanup()
 
-    def snapshot_register(self, name, path):
-        self.__snapshots[name] = {"path": self.__base_dir / path}
-
-    def snapshot_current(self, name):
-        return self.__snapshots[name]["current"]
-
-    def snapshot_old(self, name):
-        return self.__snapshots[name].get("old", Snapshot({}))
-
-    def snapshot_diff(self, name):
-        return self.snapshot_current(name).diff(self.snapshot_old(name))
-
     def get_package_alias(self, pkg, default=None):
         return self.__plugin_packages.get(pkg, default)
 
@@ -147,7 +121,7 @@ class Builder:
                     if already_imported is None:
                         importlib.import_module(plugin["package"])
 
-                    elif self.__options["fresh"]:
+                    elif self.__fresh_build:
                         importlib.reload(already_imported)
 
                 except Exception as e:
@@ -158,7 +132,7 @@ class Builder:
                 # load module from file path
                 script_path = Path(plugin["script"])
                 if not script_path.is_absolute():
-                    script_path = self.__base_dir / script_path
+                    script_path = self.__paths.base_dir / script_path
 
                 script_module = name + "_komoe_plugin"
 
@@ -179,47 +153,34 @@ class Builder:
 
     def __load_cache_data(self):
         # loading previous snapshots
-        for name in self.__snapshots:
-            snapshot_path = self.cache_dir / ("snapshot_" + name)
-            if snapshot_path.is_file():
-                with open(snapshot_path, "rt", encoding="utf8") as f:
-                    self.__snapshots[name]["old"] = Snapshot.load(f.read())
+        self.__snapshots.load_all()
 
         # load previous page-template relationships
-        relationships_path = self.cache_dir / "relationships"
+        relationships_path = self.__paths.cached_relationships
         if relationships_path.is_file():
             with open(relationships_path, "rt", encoding="utf8") as f:
                 self.__templates = Relationships.from_dict(json.load(f))
 
         # load document tree
-        doctree_path = self.cache_dir / "doctree"
+        doctree_path = self.__paths.cached_doctree
         if doctree_path.is_file():
             with open(doctree_path, "rt", encoding="utf8") as f:
                 self.__doctree = DocumentTree.from_dict(json.load(f))
 
     def __dump_cache_data(self):
-        if not self.cache_dir.exists():
-            self.cache_dir.mkdir()
+        if not self.__paths.cache_dir.exists():
+            self.__paths.cache_dir.mkdir()
 
         # dump snapshots
-        for name in self.__snapshots:
-            snapshot_path = self.cache_dir / ("snapshot_" + name)
-            with open(snapshot_path, "wt", encoding="utf8") as f:
-                f.write(self.__snapshots[name]["current"].dump())
+        self.__snapshots.dump_all()
 
         # dump page-template relationships
-        with open(self.cache_dir / "relationships", "wt", encoding="utf8") as f:
+        with open(self.__paths.cached_relationships, "wt", encoding="utf8") as f:
             json.dump(self.__templates.to_dict(), f)
 
         # dump document tree
-        with open(self.cache_dir / "doctree", "wt", encoding="utf8") as f:
+        with open(self.__paths.cached_doctree, "wt", encoding="utf8") as f:
             json.dump(self.__doctree.to_dict(), f)
-
-    def __scan_directories(self):
-        for name in self.__snapshots:
-            self.__snapshots[name]["current"] = Snapshot.scan(
-                self.__snapshots[name]["path"]
-            )
 
     def __render_pages(self):
         created = list()
@@ -227,8 +188,8 @@ class Builder:
         removed = list()
         same = list()
 
-        for file, diff in self.snapshot_diff("source").items():
-            if diff == Diff.CREATED:
+        for file, diff in self.__snapshots.diff("source").items():
+            if diff == Diff.ADDED:
                 created.append(file)
             elif diff == Diff.DELETED:
                 removed.append(file)
@@ -239,7 +200,7 @@ class Builder:
 
         if same:
             need_refresh = list()
-            for file, diff in self.snapshot_diff("templates").items():
+            for file, diff in self.__snapshots.diff("templates").items():
                 if diff == Diff.MODIFIED:
                     need_refresh += self.__templates.get_documents(file)
             for file in same:
@@ -252,13 +213,13 @@ class Builder:
             + ([f"{len(removed)} removed"] if removed else [])
         )
         if env_info:
-            log.info(f"Document environment: {env_info}")
+            log.info(f"Documents: {env_info}")
         else:
-            log.info("Document environment: no changes")
+            log.info("Documents: no changes")
             return
 
         for file in created:
-            self.__render_page(file, Diff.CREATED)
+            self.__render_page(file, Diff.ADDED)
 
         for file in modified:
             self.__render_page(file, Diff.MODIFIED)
@@ -271,8 +232,8 @@ class Builder:
         dest = base + ".html"
 
         return (
-            self.source_dir / file,
-            self.output_dir / dest,
+            self.__paths.source_dir / file,
+            self.__paths.output_dir / dest,
             dest,
         )
 
@@ -290,7 +251,7 @@ class Builder:
         content = self.__md.render(md)
 
         template_path = str(
-            self.__find_template_file(file).relative_to(self.templates_dir)
+            self.__find_template_file(file).relative_to(self.__paths.templates_dir)
         )
 
         title = self.__md.document_title
@@ -309,8 +270,8 @@ class Builder:
 
         shared = {
             "title": title,
-            "absolute": partial(self.__root_path, rendering_context),
-            "static": partial(self.__static_path, rendering_context),
+            "absolute": partial(Builder.__root_path, rendering_context),
+            "static": partial(Builder.__static_path, rendering_context),
             "document_path": partial(self.__document_path_marker, rendering_context),
         }
 
@@ -346,7 +307,7 @@ class Builder:
         self.__doctree.remove_document(Path(dst))
 
         try:
-            os.remove(self.output_dir / path)
+            os.remove(self.__paths.output_dir / path)
             click.echo("done")
         except FileNotFoundError:
             print()
@@ -357,7 +318,7 @@ class Builder:
     def __postprocess_pages(self):
         for doc in self.__postprocess:
             try:
-                with open(self.output_dir / doc, "rt", encoding="utf8") as f:
+                with open(self.__paths.output_dir / doc, "rt", encoding="utf8") as f:
                     content = f.read()
 
                 position = 0
@@ -390,7 +351,7 @@ class Builder:
 
                 new_content += content[position:]
 
-                with open(self.output_dir / doc, "wt", encoding="utf8") as f:
+                with open(self.__paths.output_dir / doc, "wt", encoding="utf8") as f:
                     f.write(new_content)
 
             except Exception as e:
@@ -401,8 +362,8 @@ class Builder:
         modified = list()
         removed = list()
 
-        for file, diff in self.snapshot_diff("static").items():
-            if diff == Diff.CREATED:
+        for file, diff in self.__snapshots.diff("static").items():
+            if diff == Diff.ADDED:
                 created.append(file)
             elif diff == Diff.DELETED:
                 removed.append(file)
@@ -421,7 +382,7 @@ class Builder:
             return
 
         for file in created:
-            self.__copy_static_file(file, Diff.CREATED)
+            self.__copy_static_file(file, Diff.ADDED)
 
         for file in modified:
             self.__copy_static_file(file, Diff.MODIFIED)
@@ -432,10 +393,10 @@ class Builder:
     def __copy_static_file(self, file, modified):
         file_status(file, modified)
 
-        dest = self.static_output_dir / file
+        dest = self.__paths.static_output_dir / file
 
         os.makedirs(dest.parent, exist_ok=True)
-        shutil.copy(self.static_dir / file, dest)
+        shutil.copy(self.__paths.static_dir / file, dest)
 
         file_status_done()
 
@@ -443,7 +404,7 @@ class Builder:
         file_status(file, Diff.DELETED)
 
         try:
-            os.remove(self.static_output_dir / file)
+            os.remove(self.__paths.static_output_dir / file)
             file_status_done()
         except FileNotFoundError:
             print()
@@ -451,7 +412,7 @@ class Builder:
 
     def __find_template_file(self, file):
         directory, name = os.path.split(self.__md.template)
-        directory = self.templates_dir / directory
+        directory = self.__paths.templates_dir / directory
 
         if not directory.is_dir():
             log.error(f"No such template : {self.__md.template}")
@@ -468,16 +429,18 @@ class Builder:
         return path
 
     def __clear_output_directory(self):
-        if self.output_dir.is_dir():
-            cleartree(self.output_dir)
+        if self.__paths.output_dir.is_dir():
+            clear_tree(self.__paths.output_dir)
 
-    def __root_path(self, ctx, path):
+    @staticmethod
+    def __root_path(ctx, path):
         if not path.startswith("/"):
             path = "/" + path
 
         return repr(ctx.get("root") + path)
 
-    def __static_path(self, ctx, path):
+    @staticmethod
+    def __static_path(ctx, path):
         if not path.startswith("/"):
             path = "/" + path
 

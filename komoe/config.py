@@ -28,10 +28,11 @@ class ProjectConfig:
     def __init__(self, cfg):
         self.__minimum_required_version = Version.parse(_require(cfg, "komoe_require"))
 
-        self.__source_dir = _require(cfg, "build", "source")
-        self.__templates_dir = _require(cfg, "build", "templates")
-        self.__static_dir = _require(cfg, "build", "static")
-        self.__output_dir = _require(cfg, "build", "output")
+        self.__source_dir = _default(cfg, "source", "builder", "source")
+        self.__templates_dir = _default(cfg, "templates", "builder", "templates")
+        self.__static_dir = _default(cfg, "static", "builder", "static")
+        self.__output_dir = _default(cfg, "build", "builder", "output")
+        self.__output_dir = _default(cfg, "/", "builder", "site_url")
 
         self.__project_infos = _default(cfg, {}, "project")
         self.__plugins = _default(cfg, {}, "plugin")

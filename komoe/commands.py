@@ -12,6 +12,7 @@ from . import log
 
 
 @click.group()
+@click.version_option(version=__version__, prog_name="YourAppName", message="%(prog)s version %(version)s")
 def main():
     pass
 
@@ -60,8 +61,7 @@ def new(path, project_name):
     help="Build the project in that directory",
 )
 @click.option("--fresh", is_flag=True, help="Regenerates all content")
-@click.option("--watch", is_flag=True, help="Rebuild as files change")
-def build(project_file, project_dir, fresh, watch):
+def build(project_file, project_dir, fresh):
     """Build a project
 
     If no project is specified, the project in the current directory will be built.
@@ -86,54 +86,91 @@ def build(project_file, project_dir, fresh, watch):
     builder = Builder(config, config_path.parent, fresh=fresh)
     builder.build()
 
-    if watch:
-        while True:
-            try:
-                click.echo("Waiting for a file to change ...")
-                for changes in watchfiles.watch(config_path.parent):
-                    need_rebuild = False
-                    force_fresh = False
-                    for _, file in changes:
-                        path = Path(file)
+    click.echo("✨ All done ! ✨")
 
-                        if (not path.is_relative_to(builder.output_dir)) and (
-                            not path.is_relative_to(builder.cache_dir)
-                        ):
-                            # source files
-                            if any(
-                                path.is_relative_to(srcdir)
-                                for srcdir in builder.snapshot_dirs
-                            ):
-                                need_rebuild = True
+@main.command()
+@click.option(
+    "--project-file",
+    "-p",
+    type=click.Path(dir_okay=False, exists=True, path_type=Path),
+    help="Build a specific project file (overrides --project-dir)",
+)
+@click.option(
+    "--project-dir",
+    "-P",
+    type=click.Path(file_okay=False, exists=True, path_type=Path),
+    help="Build the project in that directory",
+)
+def serve(project_file, project_dir):
+    """Serve a preview of a project locally
 
-                            # project file and plugins
-                            elif path.name == "komoe.toml" or path.suffix == ".py":
-                                need_rebuild = True
-                                force_fresh = True
+    The website automatically refreshes when a file is modified.
+    If no project is specified, the project in the current directory will be built.
+    """
 
-                    if need_rebuild:
-                        if force_fresh:
-                            log.info("The project file or a plugin changed")
+    if project_file is not None:
+        config_path = project_file
 
-                        builder = Builder(
-                            config, config_path.parent, fresh=fresh or force_fresh
-                        )
-                        builder.build()
+    elif (project_dir is not None) and (
+        "komoe.toml" in f.name for f in project_dir.iterdir()
+    ):
+        config_path = project_dir / "komoe.toml"
 
-                        click.echo("Waiting for a file to change ...")
-
-            except KeyboardInterrupt:
-                click.echo("\nWatch stoppped")
-                break
-
-            except Exception as e:
-                click.secho(
-                    "".join(traceback.format_tb(e.__traceback__)), nl=False, dim=True
-                )
-                log.error(f"{type(e).__name__}: {e}")
+    elif "komoe.toml" in (f.name for f in Path.cwd().iterdir()):
+        config_path = Path.cwd() / "komoe.toml"
 
     else:
-        click.echo("✨ All done ! ✨")
+        raise click.ClickException("project file not found")
+
+    config = load_config(config_path)
+
+    builder = Builder(config, config_path.parent, False)
+    builder.build()
+
+    while True:
+        try:
+            click.echo("The website has been rebuilt")
+            for changes in watchfiles.watch(config_path.parent):
+                need_rebuild = False
+                force_fresh = False
+                for _, file in changes:
+                    path = Path(file)
+
+                    if (not path.is_relative_to(builder.output_dir)) and (
+                        not path.is_relative_to(builder.cache_dir)
+                    ):
+                        # source files
+                        if any(
+                            path.is_relative_to(srcdir)
+                            for srcdir in builder.snapshot_dirs
+                        ):
+                            need_rebuild = True
+
+                        # project file and plugins
+                        elif path.name == "komoe.toml" or path.suffix == ".py":
+                            need_rebuild = True
+                            force_fresh = True
+
+                if need_rebuild:
+                    if force_fresh:
+                        log.info("The project file or a plugin changed")
+
+                    builder = Builder(
+                        config, config_path.parent, fresh=force_fresh
+                    )
+                    builder.build()
+
+                    click.echo("Waiting for a file to change ...")
+
+        except KeyboardInterrupt:
+            click.echo("\nWatch stoppped")
+            break
+
+        except Exception as e:
+            click.secho(
+                "".join(traceback.format_tb(e.__traceback__)), nl=False, dim=True
+            )
+            log.error(f"{type(e).__name__}: {e}")
 
 
 def load_config(path):

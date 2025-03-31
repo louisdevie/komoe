@@ -1,6 +1,6 @@
 @home
-title: 
+title:  
 
 # Komoe
 
-Welcome to the Komoe quickstart !
+A static site generator

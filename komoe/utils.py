@@ -1,11 +1,12 @@
 import os, shutil, pathlib
+
 import click
 
-from .snapshot import Diff
+from .builder.snapshots import Diff
 
 
 def file_status(filename, diff):
-    if diff == Diff.CREATED:
+    if diff == Diff.ADDED:
         tag = " + "
     elif diff == Diff.MODIFIED:
         tag = " ~ "
@@ -22,7 +23,7 @@ def file_status_done():
     click.echo("\x1b[2D✓")
 
 
-def cleartree(path):
+def clear_tree(path):
     if not isinstance(path, pathlib.Path):
         path = pathlib.Path(path)
 
@@ -39,3 +40,10 @@ def proxy(back):
         return front
 
     return deco
+
+
+class Internal:
+    """
+    Tag classes used in dictionaries so that user-defined keys don't collide with internal entries.
+    """
+    class Build: ...

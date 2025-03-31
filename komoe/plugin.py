@@ -3,9 +3,9 @@
 import click
 
 from . import log
-from .snapshot import Diff
-from .utils import file_status, file_status_done, proxy
-from .markdown import Markdown
+from .builder.snapshots import Diff
+from .utils import file_status, file_status_done, proxy, Internal
+from .builder.markdown import Markdown
 
 __all__ = [
     "before_build",
@@ -14,10 +14,10 @@ __all__ = [
     "after_plugin",
     "setup",
     "Diff",
+    "PluginScheduler",
     "file_status",
     "file_status_done",
 ]
-
 
 class _ModuleEvents:
     def __init__(self):
@@ -174,11 +174,11 @@ class PluginScheduler:
 
     @classmethod
     def build_started(cls):
-        cls.notify("build!", "start")
+        cls.notify(Internal.Build, "start")
 
     @classmethod
     def build_ended(cls):
-        cls.notify("build!", "end")
+        cls.notify(Internal.Build, "end")
 
     @classmethod
     def set_context(cls, context):
@@ -190,7 +190,7 @@ class PluginScheduler:
 
     @classmethod
     def notify(cls, module, event):
-        for action in cls.__events[module].on(event):
+        for action in cls.events(module).on(event):
             if not action.module.started:
                 cls.notify(action.module.name, "start")
 
@@ -234,7 +234,7 @@ class PluginScheduler:
         cls.__context = None
         cls.__config = None
 
-        cls.__events["build!"] = _ModuleEvents()
+        cls.__events[Internal.Build] = _ModuleEvents()
 
 
 class LogProxy:
@@ -349,11 +349,11 @@ def cleanup(func):
 
 
 def before_build(func):
-    PluginScheduler.subscribe("build!", "start", func)
+    PluginScheduler.subscribe(Internal.Build, "start", func)
 
 
 def after_build(func):
-    PluginScheduler.subscribe("build!", "end", func)
+    PluginScheduler.subscribe(Internal.Build, "end", func)
 
 
 def before_plugin(plugin_name):

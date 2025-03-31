@@ -1,4 +1,6 @@
-$accent1: #fcf;
+$accent1: #fbf;
+
+$maxi: 768px;
 
 body {
 	margin: 0;
@@ -11,16 +13,67 @@ header {
 	display: flex;
 	flex-direction: row;
 	align-items: center;
+	justify-content: flex-start;
 
 	background-color: $accent1;
-	box-shadow: 0 0 5px grey;
+	box-shadow: inset 0 -5px 5px -5px grey;
+
+	@media screen and (max-width: $maxi) {
+		flex-direction: column;
+		align-items: stretch;
+		justify-content: flex-end;
+		height: 120px;
+
+		#logo {
+			margin-bottom: 8px;
+		}
+	}
 
 	a {
 		padding: 0 20px;
+	}
+}
 
-		img {
-			height: 30px;
-			width: auto;
+#logo {
+	height: 30px;
+	width: auto;
+}
+
+nav {
+	height: 60px;
+	display: flex;
+	flex-direction: row;
+	align-items: flex-end;
+	justify-content: flex-start;
+
+	@media screen and (max-width: $maxi) {
+		justify-content: center;
+	}
+
+	.tab, .tab-selected {
+		line-height: 50px;
+		align-self: flex-end;
+
+		border-radius: 10px 10px 0 0;
+	}
+
+	.tab {
+		height: 50px;
+
+		&:hover {
+			text-decoration: none;
+			background-color: #fff6;
+		}
+	}
+
+	.tab-selected {
+		height: 58px;
+		margin-bottom: -8px;
+		background-color: white;
+		box-shadow: 5px -5px 5px -5px grey;
+
+		&:hover {
+			text-decoration: none;
 		}
 	}
 }
