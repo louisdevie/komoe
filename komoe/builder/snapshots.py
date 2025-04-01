@@ -7,7 +7,6 @@ import click
 
 from komoe import log
 from komoe.builder.paths import ProjectPaths
-from komoe.utils import Internal
 
 
 class Diff(Enum):
@@ -106,6 +105,8 @@ class SnapshotRegistry:
             self.__scan_path = scan_path
             self.__cache_path = cache_path
             self.__is_internal = is_internal
+            self.__old = None
+            self.__current = None
 
         @property
         def current(self) -> Snapshot:

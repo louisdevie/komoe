@@ -32,7 +32,6 @@ class ProjectConfig:
         self.__templates_dir = _default(cfg, "templates", "builder", "templates")
         self.__static_dir = _default(cfg, "static", "builder", "static")
         self.__output_dir = _default(cfg, "build", "builder", "output")
-        self.__output_dir = _default(cfg, "/", "builder", "site_url")
 
         self.__project_infos = _default(cfg, {}, "project")
         self.__plugins = _default(cfg, {}, "plugin")

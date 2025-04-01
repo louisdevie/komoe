@@ -6,8 +6,9 @@ import traceback
 import watchfiles
 
 from . import template, __version__
+from .builder.output import FileSystemOutput, InMemoryOutput
 from .config import ProjectConfig
-from .builder import Builder
+from .builder import Builder, ProjectPaths
 from . import log
 
 
@@ -70,9 +71,7 @@ def build(project_file, project_dir, fresh):
     if project_file is not None:
         config_path = project_file
 
-    elif (project_dir is not None) and (
-        "komoe.toml" in f.name for f in project_dir.iterdir()
-    ):
+    elif (project_dir is not None) and "komoe.toml" in (f.name for f in project_dir.iterdir()):
         config_path = project_dir / "komoe.toml"
 
     elif "komoe.toml" in (f.name for f in Path.cwd().iterdir()):
@@ -83,10 +82,12 @@ def build(project_file, project_dir, fresh):
 
     config = load_config(config_path)
 
-    builder = Builder(config, config_path.parent, fresh=fresh)
+    paths = ProjectPaths(config_path.parent, config)
+    builder = Builder(config, FileSystemOutput(paths), fresh, paths)
     builder.build()
 
-    click.echo("✨ All done ! ✨")
+    click.echo("\n✨️ All done ! ✨️")
+
 
 @main.command()
 @click.option(
@@ -112,7 +113,7 @@ def serve(project_file, project_dir):
         config_path = project_file
 
     elif (project_dir is not None) and (
-        "komoe.toml" in f.name for f in project_dir.iterdir()
+            "komoe.toml" in f.name for f in project_dir.iterdir()
     ):
         config_path = project_dir / "komoe.toml"
 
@@ -124,7 +125,9 @@ def serve(project_file, project_dir):
 
     config = load_config(config_path)
 
-    builder = Builder(config, config_path.parent, False)
+    paths = ProjectPaths(config_path.parent, config)
+    output = InMemoryOutput()
+    builder = Builder(config, output, fresh_build=True, paths=paths)
     builder.build()
 
     while True:
@@ -132,38 +135,36 @@ def serve(project_file, project_dir):
             click.echo("The website has been rebuilt")
             for changes in watchfiles.watch(config_path.parent):
                 need_rebuild = False
-                force_fresh = False
+                need_refresh = False
                 for _, file in changes:
                     path = Path(file)
 
-                    if (not path.is_relative_to(builder.output_dir)) and (
-                        not path.is_relative_to(builder.cache_dir)
+                    if (not path.is_relative_to(paths.output_dir)) and (
+                            not path.is_relative_to(paths.cache_dir)
                     ):
                         # source files
                         if any(
-                            path.is_relative_to(srcdir)
-                            for srcdir in builder.snapshot_dirs
+                                path.is_relative_to(srcdir)
+                                for srcdir in builder.snapshot_dirs
                         ):
                             need_rebuild = True
 
                         # project file and plugins
                         elif path.name == "komoe.toml" or path.suffix == ".py":
                             need_rebuild = True
-                            force_fresh = True
+                            need_refresh = True
 
                 if need_rebuild:
-                    if force_fresh:
-                        log.info("The project file or a plugin changed")
+                    if need_refresh:
+                        log.info("The project file or a plugin changed, doing a clean build")
 
-                    builder = Builder(
-                        config, config_path.parent, fresh=force_fresh
-                    )
+                    builder = Builder(config, output, fresh_build=need_refresh, paths=paths)
                     builder.build()
 
                     click.echo("Waiting for a file to change ...")
 
         except KeyboardInterrupt:
-            click.echo("\nWatch stoppped")
+            click.echo("\nStopping preview server")
             break
 
         except Exception as e:

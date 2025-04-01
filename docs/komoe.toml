@@ -5,12 +5,6 @@ komoe_require = '0.2.0'
 [project]
 name = 'Komoe'
 
-[build]
-source = 'source'
-templates = 'templates'
-static = 'static'
-output = 'build'
-
 [plugin.sass]
 package = "komoe_sass"
 config.path = "style"

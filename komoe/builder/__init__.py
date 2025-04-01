@@ -37,11 +37,11 @@ class Builder:
     __postprocessors: dict[str, Any]
     __plugin_packages: dict[Any, Any]
 
-    def __init__(self, config: ProjectConfig, output: BuilderOutput, base_dir: Path, fresh: bool):
+    def __init__(self, config: ProjectConfig, output: BuilderOutput, fresh_build: bool, paths: ProjectPaths):
         self.__config = config
         self.__output = output
-        self.__fresh_build = fresh
-        self.__paths = ProjectPaths(base_dir, config)
+        self.__fresh_build = fresh_build
+        self.__paths = paths
 
         self.__snapshots = SnapshotRegistry(self.__paths)
         self.__templates = Relationships()
@@ -95,7 +95,7 @@ class Builder:
             self.__load_cache_data()
 
         PluginScheduler.build_started()
-        click.echo("Build started ...")
+        click.echo("🔨️ Build started ...")
 
         self.__render_pages()
         self.__postprocess_pages()
@@ -376,9 +376,9 @@ class Builder:
             + ([f"{len(removed)} removed"] if removed else [])
         )
         if env_info:
-            log.info(f"Static environment: {env_info}")
+            log.info(f"Static files: {env_info}")
         else:
-            log.info("Static environment: no changes")
+            log.info("Static files: no changes")
             return
 
         for file in created:

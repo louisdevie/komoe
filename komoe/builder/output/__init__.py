@@ -1,5 +1,3 @@
-from abc import abstractmethod, ABC
-
-
-class BuilderOutput(ABC):
-    ...
+from .base import BuilderOutput
+from .filesystem import FileSystemOutput
+from .memory import InMemoryOutput

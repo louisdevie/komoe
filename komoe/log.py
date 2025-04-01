@@ -4,20 +4,20 @@ DEBUG = True
 
 
 def error(message):
-    __log("ERROR", "red", message)
+    __log("error", "red", message)
 
 
 def warn(message):
-    __log("WARNING", "yellow", message)
+    __log("warning", "yellow", message)
 
 
 def info(message):
-    __log("INFO", None, message)
+    __log("info", None, message)
 
 
 def dbg(message):
     if DEBUG:
-        __log("DEBUG", "cyan", message)
+        __log("debug", "cyan", message)
 
 
 def __log(level, color, message):
