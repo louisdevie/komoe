@@ -11,7 +11,7 @@ name = '{0}'
 [build]
 source = 'source'
 templates = 'templates'
-static = 'static'
+assets = 'assets'
 output = 'build'
 """
 
@@ -52,4 +52,4 @@ def create_new_project(path, name):
     with open(path / "templates" / "base.j2.html", "wt+", encoding="utf8") as f:
         f.write(BASE)
 
-    os.mkdir(path / "static")
+    os.mkdir(path / "assets")

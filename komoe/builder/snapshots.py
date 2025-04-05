@@ -4,9 +4,11 @@ from enum import Enum, auto
 from typing import Optional, Type
 
 import click
+from click import ClickException
 
 from komoe import log
 from komoe.builder.paths import ProjectPaths
+from komoe.log import Log
 
 
 class Diff(Enum):
@@ -53,7 +55,8 @@ class Snapshot:
             root = Path(root)
 
         if not root.is_dir():
-            raise ValueError("root must be an existing directory")
+            Log.error(f"cannot scan '{root}' because it isn't a directory")
+            raise ClickException(f"Failed to scan the project sources. You may need to update your config or create the missing directory.")
 
         return cls(_scan(root, root, ignore_hidden, ignore_patterns))
 
@@ -142,6 +145,9 @@ class SnapshotRegistry:
             with open(self.__cache_path, "wt", encoding="utf8") as f:
                 f.write(self.__current.dump())
 
+        def reset(self):
+            self.__old = None
+
     __paths: ProjectPaths
     __snapshots: dict[str, __Entry]
 
@@ -149,7 +155,7 @@ class SnapshotRegistry:
         self.__paths = paths
         self.__snapshots = {
             'source': SnapshotRegistry.__Entry(paths.source_dir, paths.cached_snapshot("source"), True),
-            'static': SnapshotRegistry.__Entry(paths.static_dir, paths.cached_snapshot("static"), True),
+            'assets': SnapshotRegistry.__Entry(paths.assets_dir, paths.cached_snapshot("assets"), True),
             'templates': SnapshotRegistry.__Entry(paths.templates_dir, paths.cached_snapshot("templates"), True)
         }
 
@@ -191,3 +197,7 @@ class SnapshotRegistry:
     def dump_all(self):
         for entry in self.__snapshots.values():
             entry.dump()
+
+    def reset_all(self):
+        for entry in self.__snapshots.values():
+            entry.reset()

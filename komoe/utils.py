@@ -23,6 +23,10 @@ def file_status_done():
     click.echo("\x1b[2D✓")
 
 
+def file_status_failed():
+    click.echo("\x1b[2D✗")
+
+
 def clear_tree(path):
     if not isinstance(path, pathlib.Path):
         path = pathlib.Path(path)

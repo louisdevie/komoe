@@ -1,4 +1,7 @@
-from . import log
+from pathlib import Path
+from typing import Optional
+
+from komoe.log import Log
 
 
 class Node:
@@ -19,16 +22,16 @@ class Node:
     def children(self):
         return self.__children.values()
 
-    def _add_child(self, docid, node):
-        self.__children[docid] = node
+    def _add_child(self, doc_id, node):
+        self.__children[doc_id] = node
 
     def _found(self, title):
         if title:  # ignore None and empty strings
             self.__title = title
         self.__is_document = True
 
-    def _remove_child(self, docid):
-        del self.__children[docid]
+    def _remove_child(self, doc_id):
+        del self.__children[doc_id]
 
     def _lost(self, title):
         self.__title = title
@@ -39,7 +42,7 @@ class Node:
             "title": self.__title,
             "is_document": self.__is_document,
             "children": {
-                docid: child._to_dict() for docid, child in self.__children.items()
+                doc_id: child._to_dict() for doc_id, child in self.__children.items()
             },
         }
 
@@ -47,12 +50,12 @@ class Node:
     def _from_dict(cls, d, default_title="Home"):
         node = cls(d["title"], d["is_document"])
         node.__children = {
-            docid: Node._from_dict(child) for docid, child in d["children"].items()
+            doc_id: Node._from_dict(child) for doc_id, child in d["children"].items()
         }
         return node
 
-    def get_child(self, docid):
-        return self.__children.get(docid)
+    def get_child(self, doc_id):
+        return self.__children.get(doc_id)
 
 
 class DocumentTree:
@@ -74,7 +77,7 @@ class DocumentTree:
             doctree.__root = Node._from_dict(d)
             return doctree
         except Exception as e:
-            log.warn(f"Failed to load the document tree: {e}")
+            Log.warn(f"Failed to load the document tree: {e}")
 
         return doctree
 
@@ -82,7 +85,7 @@ class DocumentTree:
         if path.stem == "index":
             if len(path.parent.parts) == 0:  # root document
                 if self.root.is_document:
-                    log.warn(f"File {path} overwritten")
+                    Log.warn(f"File {path} overwritten")
                 else:
                     self.root._found(title)
                 return
@@ -102,7 +105,7 @@ class DocumentTree:
 
         else:
             if already_exists.is_document:
-                log.warn(f"File {path} overwritten")
+                Log.warn(f"File {path} overwritten")
             else:
                 already_exists._found(title)
 
@@ -124,7 +127,7 @@ class DocumentTree:
         else:
             node._found(title)
 
-    def remove_document(self, path):
+    def remove_document(self, path: Path):
         if path.stem == "index":
             if len(path.parent.parts) == 0:  # root document
                 self.root._lost("Home")
@@ -140,17 +143,19 @@ class DocumentTree:
         if parent_node is None:
             return
 
-        target_node = self.parent_node.get_child(stem)
+        target_node = parent_node.get_child(stem)
 
         if target_node is None:
             return
 
         if len(target_node.children) == 0:
             parent_node._remove_child(stem)
+            if not parent_node.is_document and len(parent_node.children) == 0:
+                self.remove_document(Path(*parent))
         else:
             target_node._lost(stem.title())
 
-    def __get_node(self, base, path):
+    def __get_node(self, base: Node, path: list[str]) -> Optional[Node]:
         if len(path) == 0:
             return base
 

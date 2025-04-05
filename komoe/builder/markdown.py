@@ -1,13 +1,43 @@
 """Interface to the markdown library."""
+from typing import Optional
 
 import markdown
+import markdown.preprocessors
+import markdown.treeprocessors
 from abc import ABC, abstractmethod
 
-from .. import log
+from ..log import Log
 
+
+class KomoeExtendedMarkdown(markdown.Markdown):
+    __title: Optional[str]
+    __template: Optional[str]
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.__title = None
+        self.__template = None
+
+    @property
+    def template(self) -> Optional[str]:
+        return self.__template
+
+    @template.setter
+    def template(self, value: str):
+        self.__template = value
+
+    @property
+    def document_title(self) -> Optional[str]:
+        return self.__title
+
+    @document_title.setter
+    def document_title(self, value: str):
+        self.__title = value
 
 class Markdown:
-    """Wrappper around `markdown.Markdown`."""
+    """Wrapper around `markdown.Markdown`."""
+
+    __md: Optional[KomoeExtendedMarkdown]
 
     def __init__(self):
         self.__md = None
@@ -41,17 +71,16 @@ class Markdown:
             ]
         )
 
-        self.__md = markdown.Markdown(
+        self.__md = KomoeExtendedMarkdown(
             extensions=extensions,
             extension_configs=self.__extensions_config,
         )
-        self.__md.komoe = self
 
     def render(self, text: str) -> str:
         """Convert Markdown to HTML.
 
         Parameters
-          text: the markdown inputt.
+          text: the markdown input.
 
         Returns
           the HTML output.
@@ -78,7 +107,7 @@ class Markdown:
     def add_extension(self, extension, config_name=None, **config):
         if isinstance(extension, str):
             if config_name is not None:
-                log.warn(
+                Log.warn(
                     f"`config_name` can only be used with class extensions (extension {extension})"
                 )
             self.__additional_extensions.append(
@@ -93,11 +122,11 @@ class Markdown:
 
         elif isinstance(extension, markdown.Extension):
             if config_name is not None:
-                log.warn(
+                Log.warn(
                     f"`config_name` can only be used with class extensions (extension {extension})"
                 )
             if config:
-                log.warn(
+                Log.warn(
                     f"an instance extension cannot be re-configured (extension {type(extension)})"
                 )
             self.__additional_extensions.append(
@@ -117,24 +146,21 @@ class Markdown:
             self.__extensions_config[name] = config
 
     @property
-    def template(self):
-        return self.__template
-
-    @template.setter
-    def template(self, value):
-        self.__template = value
+    def template(self) -> Optional[str]:
+        if self.__md is not None:
+            return self.__md.template
 
     @property
-    def document_title(self):
-        return self.__title
-
-    @document_title.setter
-    def document_title(self, value):
-        self.__title = value
+    def document_title(self) -> Optional[str]:
+        if self.__md is not None:
+            return self.__md.document_title
 
     @property
-    def metadata(self):
-        return self.__md.Meta
+    def metadata(self) -> dict[str, list[str]]:
+        if self.__md is not None and hasattr(self.__md, 'Meta'):
+            return self.__md.Meta
+        else:
+            return dict()
 
 
 class _PluginMarkdownExtension(ABC):
@@ -186,23 +212,27 @@ class _MarkdownExtension(markdown.Extension):
 
 
 class _TemplatePreprocessor(markdown.preprocessors.Preprocessor):
+    md: KomoeExtendedMarkdown
+
     def run(self, lines):
         new_lines = lines.copy()
 
-        while not new_lines[0].strip():
+        while new_lines[0].strip() == '':
             new_lines.pop(0)
 
         if new_lines[0].startswith("@"):
-            self.md.komoe.template = new_lines[0][1:]
+            self.md.template = new_lines[0][1:].strip()
             new_lines.pop(0)
 
         return new_lines
 
     def reset(self):
-        self.md.komoe.template = None
+        self.md.template = None
 
 
 class _TitleTreeprocessor(markdown.treeprocessors.Treeprocessor):
+    md: KomoeExtendedMarkdown
+
     def run(self, root):
         h1 = root.find("h1")
-        self.md.komoe.document_title = h1.text if h1 is not None else ""
+        self.md.document_title = h1.text if h1 is not None else ""

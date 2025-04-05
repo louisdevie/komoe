@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Optional
 
 import click
 import importlib.util
@@ -11,22 +11,21 @@ import json
 from pathlib import Path
 from functools import partial
 
+from mypyc.doc.conf import templates_path
+
+from komoe.log import Log
+from komoe.config import ProjectConfig
+from komoe.plugin import PluginScheduler
+from komoe.utils import file_status, file_status_done, clear_tree, file_status_failed
 from .paths import ProjectPaths
-from .. import log
-from ..config import ProjectConfig
-from .output import BuilderOutput
-from ..plugin import PluginScheduler
 from .snapshots import Snapshot, Diff, SnapshotRegistry
 from .markdown import Markdown
-from ..utils import file_status, file_status_done, clear_tree
 from .doctree import DocumentTree
 from .relationships import Relationships
 
 
 class Builder:
     __config: ProjectConfig
-    __output: BuilderOutput
-    __fresh_build: bool
     __paths: ProjectPaths
     __snapshots: SnapshotRegistry
     __relationships: Relationships
@@ -37,14 +36,12 @@ class Builder:
     __postprocessors: dict[str, Any]
     __plugin_packages: dict[Any, Any]
 
-    def __init__(self, config: ProjectConfig, output: BuilderOutput, fresh_build: bool, paths: ProjectPaths):
+    def __init__(self, config: ProjectConfig, paths: ProjectPaths):
         self.__config = config
-        self.__output = output
-        self.__fresh_build = fresh_build
         self.__paths = paths
 
         self.__snapshots = SnapshotRegistry(self.__paths)
-        self.__templates = Relationships()
+        self.__relationships = Relationships()
         self.__doctree = DocumentTree()
         self.__postprocess = []
 
@@ -67,15 +64,15 @@ class Builder:
     def markdown(self):
         return self.__md
 
-    def build(self):
-        if self.__fresh_build:
+    def build(self, fresh: bool):
+        if fresh:
             PluginScheduler.reset()
         else:
             PluginScheduler.reload()
 
         PluginScheduler.set_context(self)
 
-        self.__load_plugins()
+        self.__load_plugins(fresh)
 
         PluginScheduler.set_config(
             {
@@ -89,8 +86,10 @@ class Builder:
 
         self.__snapshots.scan_all()
 
-        if self.__fresh_build:
+        if fresh:
             self.__clear_output_directory()
+            self.__snapshots.reset_all()
+            self.__doctree = DocumentTree()
         else:
             self.__load_cache_data()
 
@@ -99,7 +98,7 @@ class Builder:
 
         self.__render_pages()
         self.__postprocess_pages()
-        self.__copy_static_files()
+        self.__copy_asset_files()
 
         PluginScheduler.build_ended()
 
@@ -110,7 +109,7 @@ class Builder:
     def get_package_alias(self, pkg, default=None):
         return self.__plugin_packages.get(pkg, default)
 
-    def __load_plugins(self):
+    def __load_plugins(self, fresh: bool):
         for name, plugin in self.__config.plugins.items():
             if "package" in plugin:
                 # load installed package
@@ -121,11 +120,11 @@ class Builder:
                     if already_imported is None:
                         importlib.import_module(plugin["package"])
 
-                    elif self.__fresh_build:
+                    elif fresh:
                         importlib.reload(already_imported)
 
                 except Exception as e:
-                    log.error(f"can't load plugin “{name}”: {e}")
+                    Log.error(f"can't load plugin “{name}”: {e}")
                     raise click.ClickException("failed to load plugins")
 
             elif "script" in plugin:
@@ -145,11 +144,11 @@ class Builder:
                     try:
                         spec.loader.exec_module(module)
                     except Exception as e:
-                        log.error(f"can't load plugin “{name}”: {e}")
+                        Log.error(f"can't load plugin “{name}”: {e}")
                         raise click.ClickException("failed to load plugins")
 
             else:
-                log.warn(f"plugin “{name}” is declared but has no package/script")
+                Log.warn(f"plugin “{name}” is declared but has no package/script")
 
     def __load_cache_data(self):
         # loading previous snapshots
@@ -159,7 +158,7 @@ class Builder:
         relationships_path = self.__paths.cached_relationships
         if relationships_path.is_file():
             with open(relationships_path, "rt", encoding="utf8") as f:
-                self.__templates = Relationships.from_dict(json.load(f))
+                self.__relationships = Relationships.from_dict(json.load(f))
 
         # load document tree
         doctree_path = self.__paths.cached_doctree
@@ -176,7 +175,7 @@ class Builder:
 
         # dump page-template relationships
         with open(self.__paths.cached_relationships, "wt", encoding="utf8") as f:
-            json.dump(self.__templates.to_dict(), f)
+            json.dump(self.__relationships.to_dict(), f)
 
         # dump document tree
         with open(self.__paths.cached_doctree, "wt", encoding="utf8") as f:
@@ -202,7 +201,7 @@ class Builder:
             need_refresh = list()
             for file, diff in self.__snapshots.diff("templates").items():
                 if diff == Diff.MODIFIED:
-                    need_refresh += self.__templates.get_documents(file)
+                    need_refresh += self.__relationships.get_documents(file)
             for file in same:
                 if file in need_refresh:
                     modified.append(file)
@@ -213,9 +212,9 @@ class Builder:
             + ([f"{len(removed)} removed"] if removed else [])
         )
         if env_info:
-            log.info(f"Documents: {env_info}")
+            Log.info(f"Documents: {env_info}")
         else:
-            log.info("Documents: no changes")
+            Log.info("Documents: no changes")
             return
 
         for file in created:
@@ -227,7 +226,7 @@ class Builder:
         for file in removed:
             self.__remove_page(file)
 
-    def __page_location(self, file):
+    def __page_location(self, file) -> tuple[Path, Path, str]:
         base, _ = os.path.splitext(file)
         dest = base + ".html"
 
@@ -250,9 +249,11 @@ class Builder:
 
         content = self.__md.render(md)
 
-        template_path = str(
-            self.__find_template_file(file).relative_to(self.__paths.templates_dir)
-        )
+        template_path = self.__find_template_file(file)
+        if template_path is None:
+            return
+
+        template_name = str(template_path.relative_to(self.__paths.templates_dir))
 
         title = self.__md.document_title
         if "title" in self.__md.metadata:
@@ -271,20 +272,20 @@ class Builder:
         shared = {
             "title": title,
             "absolute": partial(Builder.__root_path, rendering_context),
-            "static": partial(Builder.__static_path, rendering_context),
+            "assets": partial(Builder.__assets_path, rendering_context),
             "document_path": partial(self.__document_path_marker, rendering_context),
         }
 
-        tpl = self.__j2.get_template(template_path)
+        tpl = self.__j2.get_template(template_name)
         content_tpl = self.__j2.from_string(content)
 
         self.__j2.dependencies.watch()
 
         html = tpl.render(content=content_tpl.render(**shared), **shared)
 
-        self.__templates.update(
+        self.__relationships.update(
             file,
-            template_path,
+            template_name,
             self.__j2.dependencies.used_last_watch(),
         )
 
@@ -295,23 +296,19 @@ class Builder:
 
         file_status_done()
 
-    def __remove_page(self, file):
+    def __remove_page(self, file: str):
         _, path, dst = self.__page_location(file)
 
         file_status(dst, Diff.DELETED)
 
-        for template, sources in self.__templates.items():
-            if str(file) in sources:
-                self.__templates[template].remove(str(file))
-
+        self.__relationships.remove(file)
         self.__doctree.remove_document(Path(dst))
 
         try:
             os.remove(self.__paths.output_dir / path)
-            click.echo("done")
         except FileNotFoundError:
             print()
-            log.warn(f"Failed to remove {path}: file is already gone")
+            Log.warn(f"Failed to remove {path}: file is already gone")
 
         file_status_done()
 
@@ -344,7 +341,7 @@ class Builder:
                     position = end
 
                 if failed:
-                    log.warn(
+                    Log.warn(
                         f"Failed to postprocess one or more markers in file {doc}:\n   "
                         + ", ".join(str(e) for e in failed)
                     )
@@ -355,14 +352,14 @@ class Builder:
                     f.write(new_content)
 
             except Exception as e:
-                log.warn(f"Failed to postprocess file {doc}:\n   {e}")
+                Log.warn(f"Failed to postprocess file {doc}:\n   {e}")
 
-    def __copy_static_files(self):
+    def __copy_asset_files(self):
         created = list()
         modified = list()
         removed = list()
 
-        for file, diff in self.__snapshots.diff("static").items():
+        for file, diff in self.__snapshots.diff("assets").items():
             if diff == Diff.ADDED:
                 created.append(file)
             elif diff == Diff.DELETED:
@@ -376,55 +373,62 @@ class Builder:
             + ([f"{len(removed)} removed"] if removed else [])
         )
         if env_info:
-            log.info(f"Static files: {env_info}")
+            Log.info(f"Assets: {env_info}")
         else:
-            log.info("Static files: no changes")
+            Log.info("Assets: no changes")
             return
 
         for file in created:
-            self.__copy_static_file(file, Diff.ADDED)
+            self.__copy_asset_file(file, Diff.ADDED)
 
         for file in modified:
-            self.__copy_static_file(file, Diff.MODIFIED)
+            self.__copy_asset_file(file, Diff.MODIFIED)
 
         for file in removed:
-            self.__remove_static_file(file)
+            self.__remove_asset_file(file)
 
-    def __copy_static_file(self, file, modified):
+    def __copy_asset_file(self, file, modified):
         file_status(file, modified)
 
-        dest = self.__paths.static_output_dir / file
+        dest = self.__paths.assets_output_dir / file
 
         os.makedirs(dest.parent, exist_ok=True)
-        shutil.copy(self.__paths.static_dir / file, dest)
+        shutil.copy(self.__paths.assets_dir / file, dest)
 
         file_status_done()
 
-    def __remove_static_file(self, file):
+    def __remove_asset_file(self, file):
         file_status(file, Diff.DELETED)
 
         try:
-            os.remove(self.__paths.static_output_dir / file)
+            os.remove(self.__paths.assets_output_dir / file)
             file_status_done()
         except FileNotFoundError:
             print()
-            log.warn(f"Failed to remove {file}: file is already gone")
+            Log.warn(f"Failed to remove {file}: file is already gone")
 
-    def __find_template_file(self, file):
-        directory, name = os.path.split(self.__md.template)
+    def __find_template_file(self, file) -> Optional[Path]:
+        template = self.__md.template
+        if template is None:
+            file_status_failed()
+            Log.error(f"Failed to render {file}: no template defined")
+            return None
+
+        directory, name = os.path.split(template)
         directory = self.__paths.templates_dir / directory
 
         if not directory.is_dir():
-            log.error(f"No such template : {self.__md.template}")
-            raise click.ClickException(f"failed to render {file}")
+            file_status_failed()
+            Log.error(f"Failed to render {file}: no such template : {self.__md.template}")
+            return None
 
         path = None
         for f in directory.iterdir():
             if f.is_file() and f.name.startswith(name + "."):
                 path = f
         if path is None:
-            log.error(f"No such template : {self.__md.template}")
-            raise click.ClickException(f"failed to render {file}")
+            file_status_failed()
+            Log.error(f"Failed to render {file}: no such template : {self.__md.template}")
 
         return path
 
@@ -440,11 +444,11 @@ class Builder:
         return repr(ctx.get("root") + path)
 
     @staticmethod
-    def __static_path(ctx, path):
+    def __assets_path(ctx, path):
         if not path.startswith("/"):
             path = "/" + path
 
-        return repr(ctx.get("root") + "/_static" + path)
+        return repr(ctx.get("root") + "/_assets" + path)
 
     def __document_path_marker(self, ctx, sep=" / ", maxdepth=0, include=True):
         self.__postprocess.append(ctx.get("path"))

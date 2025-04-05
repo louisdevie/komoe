@@ -30,7 +30,7 @@ class ProjectConfig:
 
         self.__source_dir = _default(cfg, "source", "builder", "source")
         self.__templates_dir = _default(cfg, "templates", "builder", "templates")
-        self.__static_dir = _default(cfg, "static", "builder", "static")
+        self.__assets_dir = _default(cfg, "assets", "builder", "assets")
         self.__output_dir = _default(cfg, "build", "builder", "output")
 
         self.__project_infos = _default(cfg, {}, "project")
@@ -60,8 +60,8 @@ class ProjectConfig:
         return self.__templates_dir
 
     @property
-    def static_directory(self):
-        return self.__static_dir
+    def assets_directory(self):
+        return self.__assets_dir
 
     @property
     def output_directory(self):

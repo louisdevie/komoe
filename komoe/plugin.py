@@ -2,8 +2,8 @@
 
 import click
 
-from . import log
 from .builder.snapshots import Diff
+from .log import Log
 from .utils import file_status, file_status_done, proxy, Internal
 from .builder.markdown import Markdown
 
@@ -111,7 +111,7 @@ class PluginScheduler:
     @classmethod
     def add_script(cls, module_name):
         if module_name in cls.__scripts:
-            log.dbg("script {module_name} is already loaded")
+            Log.dbg("script {module_name} is already loaded")
             return False
         else:
             cls.__scripts.append(module_name)
@@ -139,7 +139,7 @@ class PluginScheduler:
         action_name = callback.__name__
 
         if plugin_name == module:
-            log.error(
+            Log.error(
                 f"a plugin can't subscribe to itself ({plugin_name}.{action_name})"
             )
             raise click.ClickException("failed to load plugins")
@@ -245,17 +245,17 @@ class LogProxy:
     def context(self):
         return self.__context
 
-    @proxy(log.error)
+    @proxy(Log.error)
     def error(self, message):
-        log.error(f"{self.context}: {message}")
+        Log.error(f"{self.context}: {message}")
 
-    @proxy(log.warn)
+    @proxy(Log.warn)
     def warn(self, message):
-        log.warn(f"{self.context}: {message}")
+        Log.warn(f"{self.context}: {message}")
 
-    @proxy(log.warn)
+    @proxy(Log.warn)
     def info(self, message):
-        log.info(f"{self.context}: {message}")
+        Log.info(f"{self.context}: {message}")
 
 
 class MarkdownProxy:
@@ -324,8 +324,8 @@ class BuilderProxy:
         return self.__builder.output_dir
 
     @property
-    def static_output_dir(self):
-        return self.__builder.static_output_dir
+    def assets_output_dir(self):
+        return self.__builder.assets_output_dir
 
     @property
     def source_dir(self):
@@ -336,8 +336,8 @@ class BuilderProxy:
         return self.__builder.templates_dir
 
     @property
-    def static_dir(self):
-        return self.__builder.static_dir
+    def assets_dir(self):
+        return self.__builder.assets_dir
 
 
 def setup(func):

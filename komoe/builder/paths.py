@@ -24,8 +24,8 @@ class ProjectPaths:
         return self.__base_dir / self.__config.output_directory
 
     @property
-    def static_output_dir(self) -> Path:
-        return self.output_dir / "_static"
+    def assets_output_dir(self) -> Path:
+        return self.output_dir / "assets"
 
     @property
     def source_dir(self) -> Path:
@@ -36,8 +36,8 @@ class ProjectPaths:
         return self.__base_dir / self.__config.templates_directory
 
     @property
-    def static_dir(self) -> Path:
-        return self.__base_dir / self.__config.static_directory
+    def assets_dir(self) -> Path:
+        return self.__base_dir / self.__config.assets_directory
 
     @property
     def cached_relationships(self) -> Path:
