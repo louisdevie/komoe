@@ -2,7 +2,7 @@ import os, shutil, pathlib
 
 import click
 
-from .builder.snapshots import Diff
+from .build.snapshots import Diff
 
 
 def file_status(filename, diff):
@@ -44,10 +44,3 @@ def proxy(back):
         return front
 
     return deco
-
-
-class Internal:
-    """
-    Tag classes used in dictionaries so that user-defined keys don't collide with internal entries.
-    """
-    class Build: ...

@@ -1,19 +1,26 @@
+from typing import Optional
+
 import click
 import os
 from pathlib import Path
 
+from click import ClickException
+
 from . import template, __version__
-from .config import ProjectConfig
-from .builder import Builder, ProjectPaths
-from . import log
-from .file_watcher import FileWatcher
-from .server import Server
+from .config import KomoeConfig
+from .build import Builder, ProjectPaths
+from .devtools import Devtools
 
 
 @click.group()
-@click.version_option(version=__version__, prog_name="YourAppName", message="%(prog)s version %(version)s")
+@click.version_option(
+    version=str(__version__),
+    prog_name="YourAppName",
+    message="%(prog)s version %(version)s",
+)
 def main():
-    pass
+    print("CACA")
+    os.getenv("KOMOE_DEV")
 
 
 @main.command()
@@ -60,7 +67,7 @@ def new(path, project_name):
     help="Build the project in that directory",
 )
 @click.option("--fresh", is_flag=True, help="Regenerates all content")
-def build(project_file, project_dir, fresh):
+def build(project_file: Optional[Path], project_dir: Optional[Path], fresh: bool):
     """Build a project
 
     If no project is specified, the project in the current directory will be built.
@@ -69,7 +76,9 @@ def build(project_file, project_dir, fresh):
     if project_file is not None:
         config_path = project_file
 
-    elif (project_dir is not None) and "komoe.toml" in (f.name for f in project_dir.iterdir()):
+    elif (project_dir is not None) and "komoe.toml" in (
+        f.name for f in project_dir.iterdir()
+    ):
         config_path = project_dir / "komoe.toml"
 
     elif "komoe.toml" in (f.name for f in Path.cwd().iterdir()):
@@ -82,7 +91,7 @@ def build(project_file, project_dir, fresh):
 
     paths = ProjectPaths(config_path.parent, config)
     builder = Builder(config, paths)
-    builder.build(fresh)
+    builder.build_all(fresh)
 
     click.echo("\n✨️ All done ! ✨️")
 
@@ -106,12 +115,16 @@ def serve(project_file, project_dir):
     The website automatically refreshes when a file is modified.
     If no project is specified, the project in the current directory will be built.
     """
+    if not Devtools.are_available:
+        raise ClickException(
+            "The komoe-devtools package must be installed in order to use this command."
+        )
 
     if project_file is not None:
         config_path = project_file
 
-    elif (project_dir is not None) and (
-            "komoe.toml" in f.name for f in project_dir.iterdir()
+    elif (project_dir is not None) and "komoe.toml" in (
+        f.name for f in project_dir.iterdir()
     ):
         config_path = project_dir / "komoe.toml"
 
@@ -125,17 +138,17 @@ def serve(project_file, project_dir):
 
     paths = ProjectPaths(config_path.parent, config)
 
-    file_watcher = FileWatcher(config, paths)
-    file_watcher.initial_build()
+    # file_watcher = FileWatcher(config, paths)
+    # file_watcher.initial_build()
 
-    with Server('127.0.0.1', 5050, paths).serve_threaded():
-        file_watcher.watch_and_rebuild()
+    # with Server('127.0.0.1', 5050, paths).serve_threaded():
+    #     file_watcher.watch_and_rebuild()
 
 
 def load_config(path):
-    config = ProjectConfig.from_file(path)
+    config = KomoeConfig.from_file(path)
 
-    if config.minimum_required_version > __version__:
+    if config.minimum_required_version.contains(__version__):
         raise click.ClickException(
             f"The project requires at least Komoe v{config.minimum_required_version}"
         )

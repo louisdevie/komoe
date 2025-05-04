@@ -1,240 +1,410 @@
 """Interface to the Komoe build process for plugins."""
 
-import click
+from importlib.metadata import entry_points
+from types import ModuleType
+from typing import Optional, Mapping, Any, Callable, final, TypeAlias, TypeVar, Dict
 
-from .builder.snapshots import Diff
+import click
+from click import ClickException
+
+from .build.markdown import Markdown
+from .config import PluginConfig
 from .log import Log
-from .utils import file_status, file_status_done, proxy, Internal
-from .builder.markdown import Markdown
+from .utils import proxy
 
 __all__ = [
-    "before_build",
-    "after_build",
-    "before_plugin",
-    "after_plugin",
+    "KomoePlugin",
+    "BuilderProxy",
+    "MarkdownProxy",
+    "LogProxy",
     "setup",
-    "Diff",
-    "PluginScheduler",
-    "file_status",
-    "file_status_done",
+    "compilation_start",
+    "compilation_end",
+    "cleanup",
+    "on",
 ]
 
-class _ModuleEvents:
-    def __init__(self):
-        self.__on_start = list()
-        self.__on_end = list()
 
-    def register(self, event, action):
-        if event == "start":
-            self.__on_start.append(action)
-        elif event == "end":
-            self.__on_end.append(action)
-        else:
-            raise ValueError(f"invalid event “{event}”")
+class KomoePlugin:
+    """
+    The base class for komoe plugins.
+    """
 
-    def on(self, event):
-        if event == "start":
-            return iter(self.__on_start)
-        elif event == "end":
-            return iter(self.__on_end)
-        else:
-            raise ValueError(f"invalid event “{event}”")
+    __name: str
+    __context: "BuilderProxy"
+    __config: Mapping
 
-
-class _Action:
-    def __init__(self, callback):
-        self.__callback = callback
-        self.__called = False
-        self.__module = None
-
-    def __bool__(self):
-        return self.__called
-
-    def __call__(self, context, config):
-        if self.__called:
-            raise RuntimeError(
-                f"Action object of module {self.module.name} called twice"
-            )
-        else:
-            self.__called = True
-            return self.__callback(context, config)
-
-    def reload(self):
-        self.__called = False
-
-    @property
-    def module(self):
-        return self.__module
-
-    @module.setter
-    def module(self, value):
-        self.__module = value
-
-
-class _ModuleActions:
-    def __init__(self, name):
-        self.__actions = list()
+    def __init__(self, name: str, context: "BuilderProxy", config: Mapping):
         self.__name = name
+        self.__context = context
+        self.__config = config
 
-    def reload(self):
-        for action in self.__actions:
-            action.reload()
-
-    def add(self, action):
-        action.module = self
-        self.__actions.append(action)
-
-    @property
-    def started(self):
-        return any(self.__actions)
-
-    @property
-    def ended(self):
-        return all(self.__actions)
+    def on_build_event(self, event: str):
+        handler_name = f"on_{event}"
+        try:
+            getattr(self, handler_name)(self.__context, self.__config)
+        except AttributeError:
+            pass
+        except TypeError as e:
+            raise ClickException(
+                f"an unexpected error occurred when calling handler "
+                f"'{handler_name}' of plugin '{self.__name}'"
+            )
 
     @property
-    def name(self):
+    def name(self) -> str:
         return self.__name
 
+    @property
+    def context(self) -> "BuilderProxy":
+        return self.__context
 
-class PluginScheduler:
-    __setup = []
-    __cleanup = []
-    __events = {}
-    __actions = {}
+    @property
+    def config(self) -> Mapping:
+        return self.__config
 
-    __context = None
-    __config = None
+    def on_setup(self):
+        """
+        This method will be called only once during the very first setup phase.
+        You can use it to add file loaders, Markdown extensions, etc.
+        """
 
-    __scripts = []
+    def on_compilation_start(self):
+        """
+        This method will be called each time a compilation starts. At this
+        point, all plugins and komoe internals (e.g. the Markdown processor)
+        are configured.
+        """
 
-    @classmethod
-    def add_script(cls, module_name):
-        if module_name in cls.__scripts:
+    def on_compilation_end(self):
+        """
+        This method will be called each time a compilation ends. At this point,
+        all the output files are written.
+        """
+
+    def on_cleanup(self):
+        """
+        This method will be called only once after a build is done, or when the
+        development server shuts down.
+        """
+
+
+StandalonePluginFunction: TypeAlias = Callable[["BuilderProxy", Mapping], Any]
+"""
+A function that can be registered as a plugin event handler using a decorator
+like @setup.
+"""
+
+
+@final
+class KomoePluginModule(KomoePlugin):
+    """A plugin loaded from a module."""
+
+    __handlers: dict[str, StandalonePluginFunction]
+
+    def __init__(self, name: str, context: "BuilderProxy", config: Mapping):
+        super().__init__(name, context, config)
+
+        self.__handlers = {}
+
+    def attach(self, event: str, handler: StandalonePluginFunction):
+        if event in self.__handlers:
+            Log.error(
+                f"Another handler for '{event}' is already defined in plugin '{self.name}'."
+            )
+            raise RuntimeError("cannot define multiple handlers for the same event")
+        self.__handlers[event] = handler
+        Log.dbg(f"Handler attached to plugin module '{self.name}'")
+
+    def on_build_event(self, event: str):
+        handler = self.__handlers.get(event)
+        if handler is not None:
+            try:
+                handler(self.__context, self.__config)
+            except TypeError as e:
+                raise ClickException(
+                    f"an unexpected error occurred when calling handler "
+                    f"'{handler.__name__}' of plugin '{self.__name}'"
+                )
+
+
+@final
+class EventSource:
+    """Object that emits an event from an observable."""
+
+    __observable: "ObservableBuild"
+    __event_name: str
+
+    def __init__(self, notify: "ObservableBuild", event_name: str):
+        self.__observable = notify
+        self.__event_name = event_name
+
+    @property
+    def event_name(self) -> str:
+        return self.__event_name
+
+    def notify(self):
+        self.__observable.notify(self.__event_name)
+
+
+@final
+class ObservableBuild:
+    """An observable that notifies plugins when build events occur."""
+
+    __INTERNAL_MARKER = "!"
+
+    __events: dict[str, str]
+    __observers: list[KomoePlugin]
+
+    def __init__(self):
+        self.__events = dict()
+        self.__observers = list()
+
+    def register(self, observer: KomoePlugin):
+        """Add a plugin to be notified."""
+        self.__observers.append(observer)
+
+    def setup_internal_events(self) -> Mapping[str, EventSource]:
+        event_sources = dict()
+        for event_name in ("setup", "cleanup", "compilation_start", "compilation_end"):
+            if event_name in self.__events:
+                raise ValueError(f"'{event_name}' has already been reserved.")
+            else:
+                self.__events[event_name] = self.__INTERNAL_MARKER
+                event_sources[event_name] = EventSource(self, event_name)
+        return event_sources
+
+    def create_event(self, plugin: KomoePlugin, event_name: str) -> EventSource:
+        already_registered_by = self.__events.get(event_name)
+        if already_registered_by is None:
+            self.__events[event_name] = plugin.name
+            return EventSource(self, event_name)
+        else:
+            if already_registered_by == self.__INTERNAL_MARKER:
+                raise ValueError(f"'{event_name}' is a reserved event name.")
+            else:
+                raise ValueError(
+                    f"Event '{event_name}' was already registered by plugin '{already_registered_by}'"
+                )
+
+    def notify(self, event: str):
+        """"""
+        for observer in self.__observers:
+            observer.on_build_event(event)
+
+
+@final
+class Plugins:
+    __instance: Optional["Plugins"] = None
+
+    def __new__(cls):
+        if cls.__instance is None:
+            cls.__instance = super(Plugins, cls).__new__(cls)
+            cls.__instance.__init_once()
+        return cls.__instance
+
+    __plugins: dict[str, KomoePlugin]
+    __standalone_functions: list[tuple[StandalonePluginFunction, str]]
+    __context: Optional["BuilderProxy"]
+    __config = Optional[Mapping]
+
+    def __init_once(self):
+        self.__plugins = {}
+        self.__standalone_functions = []
+        self.__context = None
+        self.__config = None
+
+    def __require_context(self) -> "BuilderProxy":
+        return self.__context
+
+    def __get_config_for(self, plugin_name: str) -> Mapping:
+        if self.__config is None:
+            raise RuntimeError("")
+        return self.__config.get(plugin_name)
+
+    def __add_plugin_script(self, module_name):
+        if module_name in self.__scripts:
             Log.dbg("script {module_name} is already loaded")
             return False
         else:
-            cls.__scripts.append(module_name)
+            self.__scripts.append(module_name)
             return True
 
-    @classmethod
-    def events(cls, module):
-        if module not in cls.__events:
-            cls.__events[module] = _ModuleEvents()
-        return cls.__events[module]
-
-    @classmethod
-    def actions(cls, module):
-        if module not in cls.__actions:
-            cls.__actions[module] = _ModuleActions(module)
-
-        return cls.__actions[module]
-
-    @classmethod
-    def subscribe(cls, module, event, callback):
-        plugin_name = cls.__context.get_package_alias(
-            callback.__module__,
-            callback.__module__.replace("_komoe_plugin", ""),
+    def __add_plugin_module(self, plugin_name: str, module_name: str):
+        Log.dbg(f"Adding module '{module_name}' for plugin '{plugin_name}'")
+        plugin = KomoePluginModule(
+            plugin_name, self.__require_context(), self.__get_config_for(plugin_name)
         )
-        action_name = callback.__name__
+        for handler, event in self.__standalone_functions:
+            if hasattr(handler, "__module__") and handler.__module__ == module_name:
+                Log.dbg(f"Found a standalone handler for '{event}'")
+                plugin.attach(event, handler)
 
-        if plugin_name == module:
-            Log.error(
-                f"a plugin can't subscribe to itself ({plugin_name}.{action_name})"
-            )
-            raise click.ClickException("failed to load plugins")
+    def __discover_plugins(self):
+        Log.dbg("Searching for 'komoe_plugins' entry points")
+        for entry_point in entry_points(group="komoe_plugins"):
+            Log.dbg(f"Found plugin '{entry_point.name}'")
+            plugin = entry_point.load()
+            if isinstance(plugin, ModuleType):
+                self.__add_plugin_module(entry_point.name, entry_point.module)
 
-        action = _Action(callback)
+    def load_plugins(self, config: Mapping[str, PluginConfig], reload_modules: bool):
+        Log.dbg("Loading plugins")
+        self.__discover_plugins()
+        """
+        for name, plugin in config.items():
+            plugin.is_explicit_package:
+                # load installed package
+                self.__plugin_packages[plugin["package"]] = name
+                already_imported = sys.modules.get(plugin["package"])
 
-        events = cls.events(module)
-        events.register(event, action)
+                try:
+                    if already_imported is None:
+                        importlib.import_module(plugin["package"])
 
-        actions = cls.actions(plugin_name)
-        actions.add(action)
+                    elif fresh:
+                        importlib.reload(already_imported)
 
-        cls.events(plugin_name)
+                except Exception as e:
+                    Log.error(f"can't load plugin “{name}”: {e}")
+                    raise click.ClickException("failed to load plugins")
 
-    @classmethod
-    def register_setup(cls, callback):
-        plugin_name = cls.__context.get_package_alias(
-            callback.__module__,
-            callback.__module__.replace("_komoe_plugin", ""),
-        )
+            elif "script" in plugin:
+                # load module from file path
+                script_path = Path(plugin["script"])
+                if not script_path.is_absolute():
+                    script_path = self.__paths.base_dir / script_path
 
-        cls.__setup.append((plugin_name, callback))
+                script_module = name + "_komoe_plugin"
 
-    @classmethod
-    def register_cleanup(cls, callback):
-        plugin_name = cls.__context.get_package_alias(
-            callback.__module__,
-            callback.__module__.replace("_komoe_plugin", ""),
-        )
+                if PluginScheduler().add_script(script_module):
+                    spec = importlib.util.spec_from_file_location(
+                        script_module, script_path
+                    )
+                    if spec is None or spec.loader is None:
+                        Log.error(
+                            f"can't load plugin “{name}”: unable to load {script_path} as a module"
+                        )
+                        raise click.ClickException("failed to load plugins")
 
-        cls.__cleanup.append((plugin_name, callback))
+                    module = importlib.util.module_from_spec(spec)
 
-    @classmethod
-    def build_started(cls):
-        cls.notify(Internal.Build, "start")
+                    try:
+                        spec.loader.exec_module(module)
+                    except Exception as e:
+                        Log.error(f"can't load plugin “{name}”: {e}")
+                        raise click.ClickException("failed to load plugins")
 
-    @classmethod
-    def build_ended(cls):
-        cls.notify(Internal.Build, "end")
+            else:
+                Log.warn(f"plugin “{name}” is declared but has no package/script")"""
 
-    @classmethod
-    def set_context(cls, context):
-        cls.__context = context
+    def register_standalone_function(self, func: StandalonePluginFunction, event: str):
+        self.__standalone_functions.append((func, event))
 
-    @classmethod
-    def set_config(cls, config):
-        cls.__config = config
-
-    @classmethod
-    def notify(cls, module, event):
-        for action in cls.events(module).on(event):
-            if not action.module.started:
-                cls.notify(action.module.name, "start")
-
-            action(
-                BuilderProxy(cls.__context, action.module.name),
-                cls.__config.get(action.module.name, {}),
-            )
-
-            if action.module.ended:
-                cls.notify(action.module.name, "end")
-
-    @classmethod
-    def setup(cls):
-        for module, callback in cls.__setup:
-            callback(
-                BuilderProxy(cls.__context, module),
-                cls.__config.get(module, {}),
-            )
-
-    @classmethod
-    def cleanup(cls):
-        for module, callback in cls.__cleanup:
-            callback(
-                BuilderProxy(cls.__context, module),
-                cls.__config.get(module, {}),
-            )
-
-    @classmethod
-    def reload(cls):
-        for module_actions in cls.__actions.values():
-            module_actions.reload()
-
-    @classmethod
-    def reset(cls):
-        cls.__setup.clear()
-        cls.__cleanup.clear()
-        cls.__events.clear()
-        cls.__actions.clear()
-        cls.__scripts.clear()
-
-        cls.__context = None
-        cls.__config = None
-
-        cls.__events[Internal.Build] = _ModuleEvents()
+    # def events(self, module):
+    #     if module not in self.__events:
+    #         self.__events[module] = _ModuleEvents()
+    #     return self.__events[module]
+    #
+    # def actions(self, module):
+    #     if module not in self.__actions:
+    #         self.__actions[module] = _ModuleActions(module)
+    #
+    #     return self.__actions[module]
+    #
+    # def subscribe(self, module, event, callback):
+    #     plugin_name = self.__context.get_package_alias(
+    #         callback.__module__,
+    #         callback.__module__.replace("_komoe_plugin", ""),
+    #     )
+    #     action_name = callback.__name__
+    #
+    #     if plugin_name == module:
+    #         Log.error(
+    #             f"a plugin can't subscribe to itself ({plugin_name}.{action_name})"
+    #         )
+    #         raise click.ClickException("failed to load plugins")
+    #
+    #     action = _Action(callback)
+    #
+    #     events = self.events(module)
+    #     events.register(event, action)
+    #
+    #     actions = self.actions(plugin_name)
+    #     actions.add(action)
+    #
+    #     self.events(plugin_name)
+    #
+    # def register_setup(self, callback):
+    #     plugin_name = self.__context.get_package_alias(
+    #         callback.__module__,
+    #         callback.__module__.replace("_komoe_plugin", ""),
+    #     )
+    #
+    #     self.__setup.append((plugin_name, callback))
+    #
+    # def register_cleanup(self, callback):
+    #     plugin_name = self.__context.get_package_alias(
+    #         callback.__module__,
+    #         callback.__module__.replace("_komoe_plugin", ""),
+    #     )
+    #
+    #     self.__cleanup.append((plugin_name, callback))
+    #
+    # def build_started(self):
+    #     self.notify(Internal.Build, "start")
+    #
+    # def build_ended(self):
+    #     self.notify(Internal.Build, "end")
+    #
+    # def set_context(self, context):
+    #     self.__context = context
+    #
+    # def set_config(self, config):
+    #     self.__config = config
+    #
+    # def notify(self, module, event):
+    #     for action in self.events(module).on(event):
+    #         if not action.module.started:
+    #             self.notify(action.module.name, "start")
+    #
+    #         action(
+    #             BuilderProxy(self.__context, action.module.name),
+    #             self.__config.get(action.module.name, {}),
+    #         )
+    #
+    #         if action.module.ended:
+    #             self.notify(action.module.name, "end")
+    #
+    # def setup(self):
+    #     for module, callback in self.__setup:
+    #         callback(
+    #             BuilderProxy(self.__context, module),
+    #             self.__config.get(module, {}),
+    #         )
+    #
+    # def cleanup(self):
+    #     for module, callback in self.__cleanup:
+    #         callback(
+    #             BuilderProxy(self.__context, module),
+    #             self.__config.get(module, {}),
+    #         )
+    #
+    # def reload(self):
+    #     for module_actions in self.__actions.values():
+    #         module_actions.reload()
+    #
+    # def reset(self):
+    #     self.__setup.clear()
+    #     self.__cleanup.clear()
+    #     self.__events.clear()
+    #     self.__actions.clear()
+    #     self.__scripts.clear()
+    #
+    #     self.__context = None
+    #     self.__config = None
+    #
+    #     self.__events[Internal.Build] = _ModuleEvents()
 
 
 class LogProxy:
@@ -340,31 +510,53 @@ class BuilderProxy:
         return self.__builder.assets_dir
 
 
-def setup(func):
-    PluginScheduler.register_setup(func)
+_TFunc = TypeVar("_TFunc", bound=StandalonePluginFunction)
 
 
-def cleanup(func):
-    PluginScheduler.register_cleanup(func)
+def setup(func: _TFunc) -> _TFunc:
+    """
+    Register a function to be called only once during the very first setup
+    phase. You can use it to add file loaders, markdown extensions, etc.
+    """
+    Plugins().register_standalone_function(func, "setup")
+    return func
 
 
-def before_build(func):
-    PluginScheduler.subscribe(Internal.Build, "start", func)
+def compilation_start(func: _TFunc) -> _TFunc:
+    """
+    Register a function to be called each time a compilation starts. At this
+    point, all plugins and komoe internals (e.g. the Markdown processor) are
+    configured.
+    """
+    Plugins().register_standalone_function(func, "compilation_start")
+    return func
 
 
-def after_build(func):
-    PluginScheduler.subscribe(Internal.Build, "end", func)
+def compilation_end(func: _TFunc) -> _TFunc:
+    """
+    Register a function to be called each time a compilation ends. At this
+    point, all the output files are written.
+    """
+    Plugins().register_standalone_function(func, "compilation_end")
+    return func
 
 
-def before_plugin(plugin_name):
-    def deco(func):
-        PluginScheduler.subscribe(plugin_name, "start", func)
+def cleanup(func: _TFunc) -> _TFunc:
+    """
+    Register a function to be called only once after a build is done, or when
+    the development server shuts down.
+    """
+    Plugins().register_standalone_function(func, "cleanup")
+    return func
 
-    return deco
 
+def on(event_name: str) -> Callable[[_TFunc], _TFunc]:
+    """
+    Register a function to be called each time the specified event is emitted.
+    """
 
-def after_plugin(plugin_name):
-    def deco(func):
-        PluginScheduler.subscribe(plugin_name, "end", func)
+    def _deco(func):
+        Plugins().register_standalone_function(func, event_name)
+        return func
 
-    return deco
+    return _deco

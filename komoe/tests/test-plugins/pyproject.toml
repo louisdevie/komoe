@@ -1,17 +1,19 @@
 [project]
-name = "komoe-devtools"
+name = "komoe-test-plugins"
 version = "0.5.dev2"
 description = ""
 authors = [
-    {name = "Louis DEVIE",email = "louisdevie.contact@gmail.com"}
+    { name = "Louis DEVIE", email = "louisdevie.contact@gmail.com" }
 ]
-readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
 ]
 
+[project.entry-points.komoe_plugins]
+test_module = 'test_plugins.plugin_functions'
+
 [tool.poetry]
-packages = [{include = "komoe_devtools", from = "src"}]
+packages = [{ include = "test_plugins" }]
 
 
 [build-system]

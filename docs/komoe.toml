@@ -1,6 +1,6 @@
 # Configuration for KOMOE static site generator.
 
-komoe_require = '0.2.0'
+komoe_require = '0.5'
 
 [project]
 name = 'Komoe'

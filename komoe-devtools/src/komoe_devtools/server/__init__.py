@@ -4,7 +4,7 @@ from socketserver import TCPServer
 
 from .handler import PreviewRequestHandler
 from .threading import Handler, ThreadingHTTPServer
-from ..builder import ProjectPaths
+from ..build import ProjectPaths
 
 
 class Server:

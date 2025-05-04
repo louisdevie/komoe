@@ -1,18 +1,11 @@
 import os
 
 CONFIG = """\
-# Configuration for KOMOE static site generator.
-
 komoe_require = '0.3'
 
 [project]
 name = '{0}'
 
-[build]
-source = 'source'
-templates = 'templates'
-assets = 'assets'
-output = 'build'
 """
 
 BASE = """\

@@ -34,6 +34,7 @@ class KomoeExtendedMarkdown(markdown.Markdown):
     def document_title(self, value: str):
         self.__title = value
 
+
 class Markdown:
     """Wrapper around `markdown.Markdown`."""
 
@@ -147,17 +148,15 @@ class Markdown:
 
     @property
     def template(self) -> Optional[str]:
-        if self.__md is not None:
-            return self.__md.template
+        return self.__md.template if self.__md is not None else None
 
     @property
     def document_title(self) -> Optional[str]:
-        if self.__md is not None:
-            return self.__md.document_title
+        return self.__md.document_title if self.__md is not None else None
 
     @property
     def metadata(self) -> dict[str, list[str]]:
-        if self.__md is not None and hasattr(self.__md, 'Meta'):
+        if self.__md is not None and hasattr(self.__md, "Meta"):
             return self.__md.Meta
         else:
             return dict()
@@ -217,7 +216,7 @@ class _TemplatePreprocessor(markdown.preprocessors.Preprocessor):
     def run(self, lines):
         new_lines = lines.copy()
 
-        while new_lines[0].strip() == '':
+        while new_lines[0].strip() == "":
             new_lines.pop(0)
 
         if new_lines[0].startswith("@"):

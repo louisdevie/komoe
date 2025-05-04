@@ -7,7 +7,7 @@ import click
 from click import ClickException
 
 from komoe import log
-from komoe.builder.paths import ProjectPaths
+from komoe.paths import ProjectPaths
 from komoe.log import Log
 
 
@@ -48,7 +48,9 @@ class Snapshot:
         self.__files = files
 
     @classmethod
-    def scan(cls, root: PathLike, ignore_hidden=True, ignore_patterns=None) -> 'Snapshot':
+    def scan(
+        cls, root: PathLike, ignore_hidden=True, ignore_patterns=None
+    ) -> "Snapshot":
         if ignore_patterns is None:
             ignore_patterns = []
         if not isinstance(root, Path):
@@ -56,19 +58,21 @@ class Snapshot:
 
         if not root.is_dir():
             Log.error(f"cannot scan '{root}' because it isn't a directory")
-            raise ClickException(f"Failed to scan the project sources. You may need to update your config or create the missing directory.")
+            raise ClickException(
+                f"Failed to scan the project sources. You may need to update your config or create the missing directory."
+            )
 
         return cls(_scan(root, root, ignore_hidden, ignore_patterns))
 
     @classmethod
-    def load(cls, text: str) -> 'Snapshot':
+    def load(cls, text: str) -> "Snapshot":
         data = {}
         for entry in text.split("\n"):
             if len(entry) == 0:
                 continue
             path, time = entry.rsplit(":", 1)
-            time = int(time)
-            data[path] = time
+            timestamp = int(time)
+            data[path] = timestamp
         return cls(data)
 
     def dump(self) -> str:
@@ -77,7 +81,7 @@ class Snapshot:
             text += f"{path}:{time}\n"
         return text
 
-    def diff(self, old: 'Snapshot') -> dict[str, Diff]:
+    def diff(self, old: "Snapshot") -> dict[str, Diff]:
         diff_dict = {}
 
         deleted = set(old.__files)
@@ -114,7 +118,9 @@ class SnapshotRegistry:
         @property
         def current(self) -> Snapshot:
             if self.__current is None:
-                raise RuntimeError('attempt to access snapshots before they were loaded')
+                raise RuntimeError(
+                    "attempt to access snapshots before they were loaded"
+                )
             else:
                 return self.__current
 
@@ -154,9 +160,15 @@ class SnapshotRegistry:
     def __init__(self, paths: ProjectPaths):
         self.__paths = paths
         self.__snapshots = {
-            'source': SnapshotRegistry.__Entry(paths.source_dir, paths.cached_snapshot("source"), True),
-            'assets': SnapshotRegistry.__Entry(paths.assets_dir, paths.cached_snapshot("assets"), True),
-            'templates': SnapshotRegistry.__Entry(paths.templates_dir, paths.cached_snapshot("templates"), True)
+            "source": SnapshotRegistry.__Entry(
+                paths.source_dir, paths.cached_snapshot("source"), True
+            ),
+            "assets": SnapshotRegistry.__Entry(
+                paths.assets_dir, paths.cached_snapshot("assets"), True
+            ),
+            "templates": SnapshotRegistry.__Entry(
+                paths.templates_dir, paths.cached_snapshot("templates"), True
+            ),
         }
 
     @property
@@ -172,9 +184,7 @@ class SnapshotRegistry:
             raise click.ClickException("failed to register snapshot")
 
         self.__snapshots[name] = SnapshotRegistry.__Entry(
-            self.__paths.base_dir / path,
-            self.__paths.cached_snapshot(name),
-            False
+            self.__paths.base_dir / path, self.__paths.cached_snapshot(name), False
         )
 
     def current(self, name) -> Snapshot:

@@ -1,18 +1,40 @@
 [project]
 name = "komoe"
-version = "0.1.0"
+version = "0.5.dev2"
 description = ""
 authors = [
-    {name = "Louis DEVIE",email = "louisdevie.contact@gmail.com"}
+    { name = "Louis DEVIE", email = "louisdevie.contact@gmail.com" }
 ]
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+    "click (>=8.1.8,<9.0.0)",
+    "tomli (>=2.2.1,<3.0.0)",
+    "jinja2 (>=3.1.6,<4.0.0)",
+    "jinja2-td (>=3.1.6.post1,<4.0.0)",
+    "markdown (>=3.7,<4.0)",
+    "packaging (>=24.2,<25.0)"
+]
+optional-dependencies.devtools = [
+    "komoe-devtools (==0.5.dev2)"
 ]
 
 [tool.poetry]
-packages = [{include = "komoe", from = "src"}]
+packages = [{ include = "komoe", from = "src" }]
 
+[tool.poetry.group.dev.dependencies]
+mypy = "^1.15.0"
+# tomli = ">=2.2.1,<3.0.0"
+# jinja2 = ">=3.1.6,<4.0.0"
+# jinja2-td = ">=3.1.6,<4.0.0"
+types-markdown = ">=3.7,<4.0"
+# packaging = ">=24.2,<25.0"
+
+[tool.poetry.group.dev-local.dependencies]
+komoe-devtools = { path = "../komoe-devtools", develop = true }
+
+[tool.poetry.group.test-local.dependencies]
+komoe-test-plugins = { path = "./tests/test-plugins", develop = true }
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]

@@ -1,8 +1,8 @@
 __pycache__
 
 *.egg-info
-build
 dist
+docs/build
 .cache
 
 *.sublime-workspace

@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Iterable, Sequence
 
 from komoe.log import Log
 
@@ -128,6 +128,7 @@ class DocumentTree:
             node._found(title)
 
     def remove_document(self, path: Path):
+        parent: Sequence[str]
         if path.stem == "index":
             if len(path.parent.parts) == 0:  # root document
                 self.root._lost("Home")
@@ -155,7 +156,7 @@ class DocumentTree:
         else:
             target_node._lost(stem.title())
 
-    def __get_node(self, base: Node, path: list[str]) -> Optional[Node]:
+    def __get_node(self, base: Node, path: Sequence[str]) -> Optional[Node]:
         if len(path) == 0:
             return base
 

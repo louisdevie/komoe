@@ -1,4 +1,4 @@
-from typing import Any, Optional
+from typing import Any, Optional, Sequence
 
 import click
 import importlib.util
@@ -11,21 +11,19 @@ import json
 from pathlib import Path
 from functools import partial
 
-from mypyc.doc.conf import templates_path
-
 from komoe.log import Log
-from komoe.config import ProjectConfig
+from komoe.config import KomoeConfig
 from komoe.plugin import PluginScheduler
 from komoe.utils import file_status, file_status_done, clear_tree, file_status_failed
-from .paths import ProjectPaths
-from .snapshots import Snapshot, Diff, SnapshotRegistry
+from komoe.paths import ProjectPaths
+from .snapshots import Diff, SnapshotRegistry
 from .markdown import Markdown
 from .doctree import DocumentTree
 from .relationships import Relationships
 
 
 class Builder:
-    __config: ProjectConfig
+    __config: KomoeConfig
     __paths: ProjectPaths
     __snapshots: SnapshotRegistry
     __relationships: Relationships
@@ -34,9 +32,8 @@ class Builder:
     __j2: jinja2.Environment
     __postprocess: list[str]
     __postprocessors: dict[str, Any]
-    __plugin_packages: dict[Any, Any]
 
-    def __init__(self, config: ProjectConfig, paths: ProjectPaths):
+    def __init__(self, config: KomoeConfig, paths: ProjectPaths):
         self.__config = config
         self.__paths = paths
 
@@ -57,30 +54,25 @@ class Builder:
         self.__plugin_packages = {}
 
     @property
-    def snapshot_dirs(self) -> list[os.PathLike]:
+    def snapshot_dirs(self) -> Sequence[os.PathLike]:
         return self.__snapshots.tracked_dirs
 
     @property
     def markdown(self):
         return self.__md
 
-    def build(self, fresh: bool):
+    def build_all(self, fresh: bool):
         if fresh:
-            PluginScheduler.reset()
+            PluginScheduler().reset()
         else:
-            PluginScheduler.reload()
+            PluginScheduler().reload()
 
-        PluginScheduler.set_context(self)
+        PluginScheduler().set_context(self)
 
         self.__load_plugins(fresh)
 
-        PluginScheduler.set_config(
-            {
-                plugin: self.__config.plugins[plugin].get("config", {})
-                for plugin in self.__config.plugins
-            }
-        )
-        PluginScheduler.setup()
+        PluginScheduler().set_config(self.__config.plugins)
+        PluginScheduler().setup()
 
         self.__md.init()
 
@@ -93,62 +85,21 @@ class Builder:
         else:
             self.__load_cache_data()
 
-        PluginScheduler.build_started()
+        PluginScheduler().build_started()
         click.echo("🔨️ Build started ...")
 
         self.__render_pages()
         self.__postprocess_pages()
         self.__copy_asset_files()
 
-        PluginScheduler.build_ended()
+        PluginScheduler().build_ended()
 
         self.__dump_cache_data()
 
-        PluginScheduler.cleanup()
+        PluginScheduler().cleanup()
 
     def get_package_alias(self, pkg, default=None):
         return self.__plugin_packages.get(pkg, default)
-
-    def __load_plugins(self, fresh: bool):
-        for name, plugin in self.__config.plugins.items():
-            if "package" in plugin:
-                # load installed package
-                self.__plugin_packages[plugin["package"]] = name
-                already_imported = sys.modules.get(plugin["package"])
-
-                try:
-                    if already_imported is None:
-                        importlib.import_module(plugin["package"])
-
-                    elif fresh:
-                        importlib.reload(already_imported)
-
-                except Exception as e:
-                    Log.error(f"can't load plugin “{name}”: {e}")
-                    raise click.ClickException("failed to load plugins")
-
-            elif "script" in plugin:
-                # load module from file path
-                script_path = Path(plugin["script"])
-                if not script_path.is_absolute():
-                    script_path = self.__paths.base_dir / script_path
-
-                script_module = name + "_komoe_plugin"
-
-                if PluginScheduler.add_script(script_module):
-                    spec = importlib.util.spec_from_file_location(
-                        script_module, script_path
-                    )
-                    module = importlib.util.module_from_spec(spec)
-
-                    try:
-                        spec.loader.exec_module(module)
-                    except Exception as e:
-                        Log.error(f"can't load plugin “{name}”: {e}")
-                        raise click.ClickException("failed to load plugins")
-
-            else:
-                Log.warn(f"plugin “{name}” is declared but has no package/script")
 
     def __load_cache_data(self):
         # loading previous snapshots
@@ -415,20 +366,24 @@ class Builder:
             return None
 
         directory, name = os.path.split(template)
-        directory = self.__paths.templates_dir / directory
+        full_directory_path = self.__paths.templates_dir / directory
 
-        if not directory.is_dir():
+        if not full_directory_path.is_dir():
             file_status_failed()
-            Log.error(f"Failed to render {file}: no such template : {self.__md.template}")
+            Log.error(
+                f"Failed to render {file}: no such template : {self.__md.template}"
+            )
             return None
 
         path = None
-        for f in directory.iterdir():
+        for f in full_directory_path.iterdir():
             if f.is_file() and f.name.startswith(name + "."):
                 path = f
         if path is None:
             file_status_failed()
-            Log.error(f"Failed to render {file}: no such template : {self.__md.template}")
+            Log.error(
+                f"Failed to render {file}: no such template : {self.__md.template}"
+            )
 
         return path
 
