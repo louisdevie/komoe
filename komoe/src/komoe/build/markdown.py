@@ -6,8 +6,6 @@ import markdown.preprocessors
 import markdown.treeprocessors
 from abc import ABC, abstractmethod
 
-from ..log import Log
-
 
 class KomoeExtendedMarkdown(markdown.Markdown):
     __title: Optional[str]
@@ -36,7 +34,7 @@ class KomoeExtendedMarkdown(markdown.Markdown):
 
 
 class Markdown:
-    """Wrapper around `markdown.Markdown`."""
+    """Wrapper around ``markdown.Markdown``."""
 
     __md: Optional[KomoeExtendedMarkdown]
 
@@ -78,13 +76,12 @@ class Markdown:
         )
 
     def render(self, text: str) -> str:
-        """Convert Markdown to HTML.
+        """
+        Convert Markdown to HTML.
 
-        Parameters
-          text: the markdown input.
+        :param text: the markdown input.
 
-        Returns
-          the HTML output.
+        :returns: the HTML output.
         """
 
         if self.__md is None:

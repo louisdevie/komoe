@@ -1,6 +1,6 @@
 [project]
 name = "komoe-devtools"
-version = "0.5.dev2"
+version = "0.5.dev4"
 description = ""
 authors = [
     {name = "Louis DEVIE",email = "louisdevie.contact@gmail.com"}

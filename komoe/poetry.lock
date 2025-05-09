@@ -63,7 +63,7 @@ Jinja2 = ">=3.1.5,<=3.1.6"
 
 [[package]]
 name = "komoe-devtools"
-version = "0.5.dev2"
+version = "0.5.dev4"
 description = ""
 optional = false
 python-versions = ">=3.10"
@@ -77,7 +77,7 @@ url = "../komoe-devtools"
 
 [[package]]
 name = "komoe-test-plugins"
-version = "0.5.dev2"
+version = "0.5.dev4"
 description = ""
 optional = false
 python-versions = ">=3.10"
@@ -326,4 +326,4 @@ devtools = ["komoe-devtools"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.10"
-content-hash = "0ad8666755674c1ab3602e33df67d2c2f6e0040e3196594e90e956abf64626ce"
+content-hash = "d83bcecc4d7913950564c221b3d8c9b44da449337b24e8fd003185d2da12a09c"

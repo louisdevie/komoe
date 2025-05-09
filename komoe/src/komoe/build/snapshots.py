@@ -6,9 +6,7 @@ from typing import Optional, Type
 import click
 from click import ClickException
 
-from komoe import log
 from komoe.paths import ProjectPaths
-from komoe.log import Log
 
 
 class Diff(Enum):

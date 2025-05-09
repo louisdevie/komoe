@@ -1,22 +1,24 @@
 import os, shutil, pathlib
+from inspect import isclass
 
 import click
 
-from .build.snapshots import Diff
-
-
-def file_status(filename, diff):
-    if diff == Diff.ADDED:
-        tag = " + "
-    elif diff == Diff.MODIFIED:
-        tag = " ~ "
-    elif diff == Diff.SAME:
-        tag = " = "
-    elif diff == Diff.DELETED:
-        tag = " - "
-
-    click.secho(tag, nl=False, bold=True)
-    click.echo(f"{filename} … ", nl=False)
+#
+# from .build.snapshots import Diff
+#
+#
+# def file_status(filename, diff):
+#     if diff == Diff.ADDED:
+#         tag = " + "
+#     elif diff == Diff.MODIFIED:
+#         tag = " ~ "
+#     elif diff == Diff.SAME:
+#         tag = " = "
+#     elif diff == Diff.DELETED:
+#         tag = " - "
+#
+#     click.secho(tag, nl=False, bold=True)
+#     click.echo(f"{filename} … ", nl=False)
 
 
 def file_status_done():
@@ -44,3 +46,14 @@ def proxy(back):
         return front
 
     return deco
+
+
+def pretty_type(obj: object) -> str:
+    if obj is None:
+        class_name = "None"
+    elif isclass(obj):
+        class_name = obj.__name__
+    else:
+        class_name = type(obj).__name__
+
+    return f"<{class_name}>"

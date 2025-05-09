@@ -1,6 +1,6 @@
 [project]
 name = "komoe-test-plugins"
-version = "0.5.dev2"
+version = "0.5.dev4"
 description = ""
 authors = [
     { name = "Louis DEVIE", email = "louisdevie.contact@gmail.com" }
@@ -11,6 +11,7 @@ dependencies = [
 
 [project.entry-points.komoe_plugins]
 test_module = 'test_plugins.plugin_functions'
+test_class = 'test_plugins.plugin_class:MyPlugin'
 
 [tool.poetry]
 packages = [{ include = "test_plugins" }]

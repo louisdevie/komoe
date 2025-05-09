@@ -1,6 +1,9 @@
 """Interface to the Komoe build process for plugins."""
-
+import importlib.util
+import sys
 from importlib.metadata import entry_points
+from logging import Logger
+from pathlib import Path
 from types import ModuleType
 from typing import Optional, Mapping, Any, Callable, final, TypeAlias, TypeVar, Dict
 
@@ -9,20 +12,21 @@ from click import ClickException
 
 from .build.markdown import Markdown
 from .config import PluginConfig
-from .log import Log
+from .logging import Logging
 from .utils import proxy
 
 __all__ = [
     "KomoePlugin",
-    "BuilderProxy",
+    "PluginContext",
     "MarkdownProxy",
-    "LogProxy",
     "setup",
     "compilation_start",
     "compilation_end",
     "cleanup",
     "on",
 ]
+
+log = Logging.get_logger(__name__)
 
 
 class KomoePlugin:
@@ -31,10 +35,10 @@ class KomoePlugin:
     """
 
     __name: str
-    __context: "BuilderProxy"
+    __context: "PluginContext"
     __config: Mapping
 
-    def __init__(self, name: str, context: "BuilderProxy", config: Mapping):
+    def __init__(self, name: str, context: "PluginContext", config: Mapping):
         self.__name = name
         self.__context = context
         self.__config = config
@@ -42,7 +46,7 @@ class KomoePlugin:
     def on_build_event(self, event: str):
         handler_name = f"on_{event}"
         try:
-            getattr(self, handler_name)(self.__context, self.__config)
+            getattr(self, handler_name)()
         except AttributeError:
             pass
         except TypeError as e:
@@ -56,8 +60,12 @@ class KomoePlugin:
         return self.__name
 
     @property
-    def context(self) -> "BuilderProxy":
+    def context(self) -> "PluginContext":
         return self.__context
+
+    @property
+    def log(self) -> Logger:
+        return self.__context.log
 
     @property
     def config(self) -> Mapping:
@@ -89,10 +97,10 @@ class KomoePlugin:
         """
 
 
-StandalonePluginFunction: TypeAlias = Callable[["BuilderProxy", Mapping], Any]
+StandalonePluginFunction: TypeAlias = Callable[["PluginContext", Mapping], Any]
 """
 A function that can be registered as a plugin event handler using a decorator
-like @setup.
+like :deco:`setup`.
 """
 
 
@@ -102,29 +110,30 @@ class KomoePluginModule(KomoePlugin):
 
     __handlers: dict[str, StandalonePluginFunction]
 
-    def __init__(self, name: str, context: "BuilderProxy", config: Mapping):
+    def __init__(self, name: str, context: "PluginContext", config: Mapping):
         super().__init__(name, context, config)
 
         self.__handlers = {}
 
     def attach(self, event: str, handler: StandalonePluginFunction):
         if event in self.__handlers:
-            Log.error(
+            log.error(
                 f"Another handler for '{event}' is already defined in plugin '{self.name}'."
             )
             raise RuntimeError("cannot define multiple handlers for the same event")
         self.__handlers[event] = handler
-        Log.dbg(f"Handler attached to plugin module '{self.name}'")
+        log.debug(f"Handler attached to plugin module '{self.name}'")
 
     def on_build_event(self, event: str):
         handler = self.__handlers.get(event)
         if handler is not None:
             try:
-                handler(self.__context, self.__config)
-            except TypeError as e:
+                handler(self.context, self.config)
+            except Exception as e:
+                self.log.exception("a", exc_info=e)
                 raise ClickException(
                     f"an unexpected error occurred when calling handler "
-                    f"'{handler.__name__}' of plugin '{self.__name}'"
+                    f"'{handler.__name__}' of plugin '{self.name}'"
                 )
 
 
@@ -165,6 +174,7 @@ class ObservableBuild:
         self.__observers.append(observer)
 
     def setup_internal_events(self) -> Mapping[str, EventSource]:
+        """Set up events to be triggered by the komoe build process."""
         event_sources = dict()
         for event_name in ("setup", "cleanup", "compilation_start", "compilation_end"):
             if event_name in self.__events:
@@ -175,6 +185,7 @@ class ObservableBuild:
         return event_sources
 
     def create_event(self, plugin: KomoePlugin, event_name: str) -> EventSource:
+        """Set up an event to be triggered by a plugin."""
         already_registered_by = self.__events.get(event_name)
         if already_registered_by is None:
             self.__events[event_name] = plugin.name
@@ -188,7 +199,7 @@ class ObservableBuild:
                 )
 
     def notify(self, event: str):
-        """"""
+        """Triggers all registered observers with the given event."""
         for observer in self.__observers:
             observer.on_build_event(event)
 
@@ -197,7 +208,7 @@ class ObservableBuild:
 class Plugins:
     __instance: Optional["Plugins"] = None
 
-    def __new__(cls):
+    def __new__(cls) -> "Plugins":
         if cls.__instance is None:
             cls.__instance = super(Plugins, cls).__new__(cls)
             cls.__instance.__init_once()
@@ -205,8 +216,8 @@ class Plugins:
 
     __plugins: dict[str, KomoePlugin]
     __standalone_functions: list[tuple[StandalonePluginFunction, str]]
-    __context: Optional["BuilderProxy"]
-    __config = Optional[Mapping]
+    __context: Mapping[str, Any] | None
+    __config: Mapping[str, PluginConfig] | None
 
     def __init_once(self):
         self.__plugins = {}
@@ -214,89 +225,123 @@ class Plugins:
         self.__context = None
         self.__config = None
 
-    def __require_context(self) -> "BuilderProxy":
-        return self.__context
+    def __require_context_for(self, plugin_name: str) -> "PluginContext":
+        if self.__context is None:
+            raise RuntimeError(f"Attempt to access context before initialisation")
+        return PluginContext(plugin_name, self.__context)
 
     def __get_config_for(self, plugin_name: str) -> Mapping:
         if self.__config is None:
-            raise RuntimeError("")
-        return self.__config.get(plugin_name)
+            raise RuntimeError("Attempt to access plugin config before initialisation")
+        config = self.__config.get(plugin_name)
+        return None if config is None else config.extras
 
-    def __add_plugin_script(self, module_name):
-        if module_name in self.__scripts:
-            Log.dbg("script {module_name} is already loaded")
-            return False
-        else:
-            self.__scripts.append(module_name)
-            return True
+    def __add_plugin(self, plugin: KomoePlugin):
+        if plugin.name in self.__plugins:
+            raise RuntimeError(
+                f"Attempt to register plugin '{plugin.name}' multiple times"
+            )
+        self.__plugins[plugin.name] = plugin
+        self.__context["observable"].register(plugin)
 
     def __add_plugin_module(self, plugin_name: str, module_name: str):
-        Log.dbg(f"Adding module '{module_name}' for plugin '{plugin_name}'")
+        """
+        Register a plugin module.
+
+        :param plugin_name: The name of the plugin.
+        :param module_name: The name of the python module. The standalone
+           functions that belong to this module will be attached to the plugin.
+        """
+        log.debug(f"Adding module '{module_name}' as plugin '{plugin_name}'")
+
         plugin = KomoePluginModule(
-            plugin_name, self.__require_context(), self.__get_config_for(plugin_name)
+            plugin_name,
+            self.__require_context_for(plugin_name),
+            self.__get_config_for(plugin_name),
         )
+
         for handler, event in self.__standalone_functions:
-            if hasattr(handler, "__module__") and handler.__module__ == module_name:
-                Log.dbg(f"Found a standalone handler for '{event}'")
+            if getattr(handler, "__module__", None) == module_name:
+                log.debug(f"Found a standalone handler for '{event}'")
                 plugin.attach(event, handler)
 
+        self.__add_plugin(plugin)
+
+    def __add_plugin_class(self, plugin_name: str, cls: type[KomoePlugin]):
+        """
+        Register a plugin class.
+
+        :param plugin_name: The name of the plugin.
+        :param cls: The plugin class derived from ``KomoePlugin``.
+        """
+        log.debug(f"Adding class '{cls.__name__}' as plugin '{plugin_name}'")
+
+        plugin = cls(
+            plugin_name,
+            self.__require_context_for(plugin_name),
+            self.__get_config_for(plugin_name),
+        )
+
+        self.__add_plugin(plugin)
+
     def __discover_plugins(self):
-        Log.dbg("Searching for 'komoe_plugins' entry points")
+        """Automatically load plugins using setuptools entry points."""
+        log.debug("Searching for 'komoe_plugins' entry points")
+
         for entry_point in entry_points(group="komoe_plugins"):
-            Log.dbg(f"Found plugin '{entry_point.name}'")
+            log.debug(f"Found plugin '{entry_point.name}'")
             plugin = entry_point.load()
             if isinstance(plugin, ModuleType):
                 self.__add_plugin_module(entry_point.name, entry_point.module)
+            elif type(plugin) is type and issubclass(plugin, KomoePlugin):
+                self.__add_plugin_class(entry_point.name, plugin)
+            else:
+                dist = entry_point.dist
+                origin = " declared by " + dist.name if dist is not None else ""
+                log.warning(
+                    f"Entry point '{entry_point.name}'{origin} is not a valid plugin"
+                )
 
-    def load_plugins(self, config: Mapping[str, PluginConfig], reload_modules: bool):
-        Log.dbg("Loading plugins")
-        self.__discover_plugins()
-        """
-        for name, plugin in config.items():
-            plugin.is_explicit_package:
-                # load installed package
-                self.__plugin_packages[plugin["package"]] = name
-                already_imported = sys.modules.get(plugin["package"])
+    def __load_scripts(self):
+        """Load script plugins declared in the config file."""
+        log.debug("Loading scripts")
+        for name, plugin in self.__config.items():
+            if plugin.script is not None:
+                log.debug(f"Found plugin '{name}'")
 
-                try:
-                    if already_imported is None:
-                        importlib.import_module(plugin["package"])
-
-                    elif fresh:
-                        importlib.reload(already_imported)
-
-                except Exception as e:
-                    Log.error(f"can't load plugin “{name}”: {e}")
-                    raise click.ClickException("failed to load plugins")
-
-            elif "script" in plugin:
                 # load module from file path
-                script_path = Path(plugin["script"])
+                script_path = Path(plugin.script)
                 if not script_path.is_absolute():
-                    script_path = self.__paths.base_dir / script_path
+                    script_path = self.__context["paths"].base_dir / script_path
 
                 script_module = name + "_komoe_plugin"
+                already_imported = sys.modules.get(script_module)
 
-                if PluginScheduler().add_script(script_module):
+                if already_imported is None:
+                    log.debug(f"Loading script '{script_path}' as '{script_module}'")
+
                     spec = importlib.util.spec_from_file_location(
                         script_module, script_path
                     )
                     if spec is None or spec.loader is None:
-                        Log.error(
-                            f"can't load plugin “{name}”: unable to load {script_path} as a module"
+                        log.error(
+                            f"failed to load plugin '{name}': unable to load {script_path} as a module"
                         )
                         raise click.ClickException("failed to load plugins")
 
                     module = importlib.util.module_from_spec(spec)
+                    sys.modules[script_module] = module
+                    spec.loader.exec_module(module)
 
-                    try:
-                        spec.loader.exec_module(module)
-                    except Exception as e:
-                        Log.error(f"can't load plugin “{name}”: {e}")
-                        raise click.ClickException("failed to load plugins")
+                self.__add_plugin_module(name, script_module)
 
-            else:
-                Log.warn(f"plugin “{name}” is declared but has no package/script")"""
+    def load_plugins(self, config: Mapping[str, PluginConfig], reload_modules: bool):
+        """Loads all available plugins."""
+        log.debug("Loading plugins")
+        self.__config = config
+
+        self.__discover_plugins()
+        self.__load_scripts()
 
     def register_standalone_function(self, func: StandalonePluginFunction, event: str):
         self.__standalone_functions.append((func, event))
@@ -320,7 +365,7 @@ class Plugins:
     #     action_name = callback.__name__
     #
     #     if plugin_name == module:
-    #         Log.error(
+    #         log.error(
     #             f"a plugin can't subscribe to itself ({plugin_name}.{action_name})"
     #         )
     #         raise click.ClickException("failed to load plugins")
@@ -356,13 +401,23 @@ class Plugins:
     #
     # def build_ended(self):
     #     self.notify(Internal.Build, "end")
-    #
-    # def set_context(self, context):
-    #     self.__context = context
-    #
-    # def set_config(self, config):
-    #     self.__config = config
-    #
+
+    def set_context(self, context: Mapping[str, Any]) -> Mapping[str, EventSource]:
+        """
+        Set up the build context and initialise a new observable.
+
+        :param context: Data passed from the builder to the plugins. The mapping
+           is expected to have a 'markdown' and a 'paths' entry.
+
+        :return: The internal events like ``setup`` and ``cleanup``.
+        """
+        if self.__context is not None:
+            raise RuntimeError("A build context has already been defined")
+
+        observable = ObservableBuild()
+        self.__context = {**context, "observable": observable}
+        return observable.setup_internal_events()
+
     # def notify(self, module, event):
     #     for action in self.events(module).on(event):
     #         if not action.module.started:
@@ -375,14 +430,6 @@ class Plugins:
     #
     #         if action.module.ended:
     #             self.notify(action.module.name, "end")
-    #
-    # def setup(self):
-    #     for module, callback in self.__setup:
-    #         callback(
-    #             BuilderProxy(self.__context, module),
-    #             self.__config.get(module, {}),
-    #         )
-    #
     # def cleanup(self):
     #     for module, callback in self.__cleanup:
     #         callback(
@@ -407,29 +454,10 @@ class Plugins:
     #     self.__events[Internal.Build] = _ModuleEvents()
 
 
-class LogProxy:
-    def __init__(self, ctx):
-        self.__context = ctx
-
-    @property
-    def context(self):
-        return self.__context
-
-    @proxy(Log.error)
-    def error(self, message):
-        Log.error(f"{self.context}: {message}")
-
-    @proxy(Log.warn)
-    def warn(self, message):
-        Log.warn(f"{self.context}: {message}")
-
-    @proxy(Log.warn)
-    def info(self, message):
-        Log.info(f"{self.context}: {message}")
-
-
 class MarkdownProxy:
-    def __init__(self, markdown):
+    __md: Markdown
+
+    def __init__(self, markdown: Markdown):
         self.__md = markdown
 
     @proxy(Markdown.disable_default_extension)
@@ -445,11 +473,15 @@ class MarkdownProxy:
         self.__md.configure_extension(name, **config)
 
 
-class BuilderProxy:
-    def __init__(self, builder, log_ctx):
-        self.__builder = builder
-        self.__log = LogProxy(log_ctx)
-        self.__md = MarkdownProxy(self.__builder.markdown)
+class PluginContext:
+    __plugin_name: str
+    __md: MarkdownProxy
+    __log: Logger
+
+    def __init__(self, plugin_name: str, context: Mapping[str, Any]):
+        self.__plugin_name = plugin_name
+        self.__log = Logging.get_logger_for_plugin(plugin_name)
+        self.__md = MarkdownProxy(context["markdown"])
 
     @property
     def log(self):
@@ -459,55 +491,11 @@ class BuilderProxy:
     def echo(self):
         return click.echo
 
-    def fatal(self, message=None):
+    def abort(self, message=None):
         raise click.ClickException(
-            f"plugin {self.__log.context} aborted the build"
+            f"plugin {self.__plugin_name} aborted the build"
             + ("" if message is None else ": " + message)
         )
-
-    def snapshot_register(self, name, path):
-        return self.__builder.snapshot_register(name, path)
-
-    def snapshot_current(self, name):
-        return self.__builder.snapshot_current(name)
-
-    def snapshot_old(self, name):
-        return self.__builder.snapshot_old(name)
-
-    def snapshot_diff(self, name):
-        return self.__builder.snapshot_diff(name)
-
-    @property
-    def markdown(self):
-        return self.__md
-
-    @property
-    def base_dir(self):
-        return self.__builder.base_dir
-
-    @property
-    def cache_dir(self):
-        return self.__builder.cache_dir
-
-    @property
-    def output_dir(self):
-        return self.__builder.output_dir
-
-    @property
-    def assets_output_dir(self):
-        return self.__builder.assets_output_dir
-
-    @property
-    def source_dir(self):
-        return self.__builder.source_dir
-
-    @property
-    def templates_dir(self):
-        return self.__builder.templates_dir
-
-    @property
-    def assets_dir(self):
-        return self.__builder.assets_dir
 
 
 _TFunc = TypeVar("_TFunc", bound=StandalonePluginFunction)

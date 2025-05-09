@@ -1,6 +1,6 @@
 [project]
 name = "komoe"
-version = "0.5.dev2"
+version = "0.5.dev4"
 description = ""
 authors = [
     { name = "Louis DEVIE", email = "louisdevie.contact@gmail.com" }
@@ -16,7 +16,7 @@ dependencies = [
     "packaging (>=24.2,<25.0)"
 ]
 optional-dependencies.devtools = [
-    "komoe-devtools (==0.5.dev2)"
+    "komoe-devtools (==0.5.dev4)"
 ]
 
 [tool.poetry]

@@ -8,7 +8,6 @@ from click import ClickException
 
 from . import template, __version__
 from .config import KomoeConfig
-from .build import Builder, ProjectPaths
 from .devtools import Devtools
 
 
@@ -19,8 +18,18 @@ from .devtools import Devtools
     message="%(prog)s version %(version)s",
 )
 def main():
-    print("CACA")
-    os.getenv("KOMOE_DEV")
+    ...
+
+
+def load_config(path):
+    config = KomoeConfig.from_file(path)
+
+    if not config.minimum_required_version.contains(__version__):
+        raise click.ClickException(
+            f"The project requires at least Komoe v{config.minimum_required_version}"
+        )
+
+    return config
 
 
 @main.command()
@@ -143,14 +152,3 @@ def serve(project_file, project_dir):
 
     # with Server('127.0.0.1', 5050, paths).serve_threaded():
     #     file_watcher.watch_and_rebuild()
-
-
-def load_config(path):
-    config = KomoeConfig.from_file(path)
-
-    if config.minimum_required_version.contains(__version__):
-        raise click.ClickException(
-            f"The project requires at least Komoe v{config.minimum_required_version}"
-        )
-
-    return config

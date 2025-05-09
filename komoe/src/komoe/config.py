@@ -1,41 +1,57 @@
-from abc import ABC, abstractmethod
 from collections.abc import Mapping, Callable
 from os import PathLike
 from types import NotImplementedType
-from typing import TypeVar, Any, Generic, Optional, Type
+from typing import TypeVar, Any
 
 import click
 import tomli
+from click import ClickException
 from packaging.specifiers import SpecifierSet, InvalidSpecifier
 
-from .log import Log
+from komoe.logging import Logging
+from komoe.utils import pretty_type
+
+log = Logging.get_logger(__name__)
+
 
 X = TypeVar("X")
 
 
+class InvalidConfigException(ClickException):
+    def __init__(self):
+        super().__init__("invalid configuration file")
+
+
 class ConfigValue:
+    MISSING = object()
+
     def __init__(self, key: str, value: Any):
         self.__key = key
         self.__value = value
+
+    def __raise_if_missing(self):
+        if self.__value is ConfigValue.MISSING:
+            log.error(f"A value for {self.__key} is required")
+            raise InvalidConfigException()
 
     def unwrap(self, expected_type: type[X]) -> X:
         if isinstance(self.__value, expected_type):
             return self.__value
         else:
-            Log.error(
-                f"expected {self.__key} to be of type <{expected_type}>, got <{type(self.__value)}> instead"
+            log.error(
+                f"expected {self.__key} to be of type {pretty_type(expected_type)}, got {pretty_type(self.__value)} instead"
             )
-            raise click.ClickException("invalid configuration file")
+            raise InvalidConfigException()
 
     def unwrap_as(self, converter: Callable[[str, Any], X | NotImplementedType]) -> X:
         converted_value = converter(self.__key, self.__value)
         if converted_value is NotImplemented:
-            return self.__value
+            raise InvalidConfigException()
         else:
-            raise click.ClickException("invalid configuration file")
+            return self.__value
 
-    def get(self, item: str, default: object = None) -> "ConfigValue":
-        item_value = None
+    def get(self, item: str, default: object = MISSING) -> "ConfigValue":
+        item_value = default
         if hasattr(self.__value, "__getitem__"):
             try:
                 item_value = self.__value[item]
@@ -47,6 +63,7 @@ class ConfigValue:
         nested_property = self
         for item in path.split("."):
             nested_property = nested_property.get(item)
+            nested_property.__raise_if_missing()
         return nested_property
 
 
@@ -59,7 +76,7 @@ def specifier_set(key: str, value: Any) -> SpecifierSet:
             pass
 
     if spec is None:
-        Log.error(f"{key} must be a valid type specifier")
+        log.error(f"{key} must be a valid version specifier")
         return NotImplemented
     else:
         return spec
@@ -77,9 +94,9 @@ class KomoeConfig:
 
         self.__project = ProjectConfig(cfg.get("project"))
 
-        plugins = cfg.get("plugins", {}).unwrap(dict)
+        plugins = cfg.get("plugins", {})
         self.__plugins = {
-            str(key): PluginConfig(config) for key, config in plugins.items()
+            str(key): PluginConfig(plugins.get(key)) for key in plugins.unwrap(dict)
         }
 
     @classmethod
@@ -88,8 +105,8 @@ class KomoeConfig:
             with open(path, "rb") as f:
                 toml_dict = tomli.load(f)
         except tomli.TOMLDecodeError as e:
-            Log.error(f"error reading configuration file: {e}")
-            raise click.ClickException("invalid configuration file")
+            log.error(f"error reading configuration file: {e}")
+            raise InvalidConfigException()
 
         return cls(ConfigValue("$", toml_dict))
 
@@ -107,6 +124,8 @@ class KomoeConfig:
 
 
 class ProjectConfig:
+    __title: str
+
     def __init__(self, cfg: ConfigValue):
         self.__title = cfg.require("title").unwrap(str)
 
@@ -116,5 +135,18 @@ class ProjectConfig:
 
 
 class PluginConfig:
+    __script: str | None
+    __extras: dict[str, Any]
+
     def __init__(self, cfg: ConfigValue):
-        ...
+        config_dict = cfg.unwrap(dict)
+        self.__script = config_dict.pop("script", None)
+        self.__extras = config_dict
+
+    @property
+    def script(self) -> str | None:
+        return self.__script
+
+    @property
+    def extras(self) -> Mapping:
+        return self.__extras

@@ -4,6 +4,9 @@
     <option name="ENV_FILES" value="" />
     <option name="INTERPRETER_OPTIONS" value="" />
     <option name="PARENT_ENVS" value="true" />
+    <envs>
+      <env name="KOMOE_DEV" value="YES" />
+    </envs>
     <option name="SDK_HOME" value="$USER_HOME$/.cache/pypoetry/virtualenvs/komoe-Ogszsn_x-py3.10/bin/python3.10" />
     <option name="SDK_NAME" value="Python 3.10 virtualenv at ~/.cache/pypoetry/virtualenvs/komoe-Ogszsn_x-py3.10" />
     <option name="WORKING_DIRECTORY" value="" />
