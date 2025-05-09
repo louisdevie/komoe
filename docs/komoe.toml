@@ -1,9 +1,7 @@
-# Configuration for KOMOE static site generator.
-
 komoe_require = '==0.5.dev4'
 
 [project]
-title = 'Komoe'
+name = 'Komoe'
 
 [plugin.sass]
 package = "komoe_sass"

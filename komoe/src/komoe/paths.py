@@ -17,11 +17,11 @@ class ProjectPaths:
 
     @property
     def cache_dir(self) -> Path:
-        return self.__base_dir / ".cache"
+        return self.__base_dir / self.__config.cache_dir
 
     @property
     def output_dir(self) -> Path:
-        return self.__base_dir / "www"
+        return self.__base_dir / self.__config.output_dir
 
     @property
     def assets_output_dir(self) -> Path:

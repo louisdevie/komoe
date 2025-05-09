@@ -1,3 +1,4 @@
+from email.policy import default
 from typing import Optional
 
 import click
@@ -7,9 +8,11 @@ from pathlib import Path
 from click import ClickException
 
 from . import template, __version__
-from .config import KomoeConfig
+from .build.builder import Builder
+from .config import KomoeConfig, Caching
 from .devtools import Devtools
-from .logging import Logging
+from .logging import Logging, echo
+from .paths import ProjectPaths
 
 
 @click.group()
@@ -19,8 +22,13 @@ from .logging import Logging
     message="%(prog)s version %(version)s",
 )
 @click.option("--debug", is_flag=True, help="Enable debug logging to the console.")
-def main(debug: bool):
-    Logging.init(debug)
+@click.option(
+    "--no-color",
+    is_flag=True,
+    help=".",
+)
+def main(debug: bool, no_color: bool):
+    Logging.init(debug, not no_color)
 
 
 def load_config(path):
@@ -75,10 +83,52 @@ def new(path, project_name):
     "--project-dir",
     "-P",
     type=click.Path(file_okay=False, exists=True, path_type=Path),
-    help="Build the project in that directory",
+    help="Build the project from the specified directory",
 )
-@click.option("--fresh", is_flag=True, help="Regenerates all content")
-def build(project_file: Optional[Path], project_dir: Optional[Path], fresh: bool):
+@click.option(
+    "--clean/--dirty",
+    help="A clean build (the default) will clear the output directory. A dirty "
+    "build will keep the files from previous builds and only rebuild files that "
+    "have changed if the cache is available.",
+)
+@click.option(
+    "--output-dir",
+    "-o",
+    type=click.Path(file_okay=False, path_type=Path),
+    default="www",
+    help='The directory where the site is built. "site" is used by default.',
+)
+@click.option(
+    "--cache",
+    "caching",
+    flag_value=Caching.USE_CACHE,
+    default=True,
+    help="Use cached data from the previous builds and also store the results of "
+    "this build in the cache. This is the default option.",
+)
+@click.option(
+    "--no-cache",
+    "caching",
+    flag_value=Caching.NO_CACHE,
+    help="Do not cache anything and destroy any data that was cached previously.",
+)
+@click.option(
+    "--ignore-cache",
+    "caching",
+    flag_value=Caching.IGNORE_CACHE,
+    help="Do not use or modify the cached data.",
+)
+@click.option(
+    "--cache-dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=".cache",
+    help='The directory where cache data is stored. The default is ".cache".',
+)
+def build(
+    project_file: Optional[Path],
+    project_dir: Optional[Path],
+    **other_options,
+):
     """Build a project
 
     If no project is specified, the project in the current directory will be built.
@@ -99,12 +149,12 @@ def build(project_file: Optional[Path], project_dir: Optional[Path], fresh: bool
         raise click.ClickException("project file not found")
 
     config = load_config(config_path)
+    config.use_cli_args(other_options)
 
     paths = ProjectPaths(config_path.parent, config)
     builder = Builder(config, paths)
-    builder.build_all(fresh)
 
-    click.echo("\n✨️ All done ! ✨️")
+    echo("\n✨️ All done ! ✨️")
 
 
 @main.command()

@@ -1,9 +1,10 @@
 from collections.abc import Mapping, Callable
+from enum import Enum, auto
 from os import PathLike
+from pathlib import Path
 from types import NotImplementedType
 from typing import TypeVar, Any
 
-import click
 import tomli
 from click import ClickException
 from packaging.specifiers import SpecifierSet, InvalidSpecifier
@@ -82,8 +83,18 @@ def specifier_set(key: str, value: Any) -> SpecifierSet:
         return spec
 
 
+class Caching:
+    USE_CACHE = "USE_CACHE"
+    IGNORE_CACHE = "IGNORE_CACHE"
+    NO_CACHE = "NO_CACHE"
+
+
 class KomoeConfig:
     __minimum_required_version: SpecifierSet
+    __output_dir: Path
+    __clean: bool
+    __caching: str
+    __cache_dir: Path
     __project: "ProjectConfig"
     __plugins: dict[str, "PluginConfig"]
 
@@ -111,9 +122,32 @@ class KomoeConfig:
 
         return cls(ConfigValue("$", toml_dict))
 
+    def use_cli_args(self, args: Mapping[str, Any]):
+        log.debug(f"Updating configuration with command-line arguments")
+        self.__output_dir = args["output_dir"]
+        self.__clean = args["clean"]
+        self.__caching = args["caching"]
+        self.__cache_dir = args["cache_dir"]
+
     @property
     def minimum_required_version(self) -> SpecifierSet:
         return self.__minimum_required_version
+
+    @property
+    def output_dir(self) -> Path:
+        return self.__output_dir
+
+    @property
+    def clean(self) -> bool:
+        return self.__clean
+
+    @property
+    def caching(self) -> str:
+        return self.__caching
+
+    @property
+    def cache_dir(self) -> Path:
+        return self.__cache_dir
 
     @property
     def project(self) -> "ProjectConfig":
@@ -125,14 +159,14 @@ class KomoeConfig:
 
 
 class ProjectConfig:
-    __title: str
+    __name: str
 
     def __init__(self, cfg: ConfigValue):
-        self.__title = cfg.require("title").unwrap(str)
+        self.__name = cfg.require("name").unwrap(str)
 
     @property
-    def title(self) -> str:
-        return self.__title
+    def name(self) -> str:
+        return self.__name
 
 
 class PluginConfig:

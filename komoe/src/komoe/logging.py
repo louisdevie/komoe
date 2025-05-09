@@ -16,20 +16,33 @@ RESERVED_MODULES = [
 
 class Logging:
     __development = False
+    __color = False
 
     @classmethod
-    def init(cls, development: bool):
+    def init(cls, development: bool, color: bool):
         cls.__development = development or bool(os.getenv("KOMOE_DEV"))
+        cls.__color = color and not bool(os.getenv("NO_COLOR"))
+
         level = logging.DEBUG if cls.__development else logging.INFO
 
         # set up a root 'komoe' logger
         logger = logging.getLogger(ROOT)
         logger.setLevel(level)
 
-        click_handler = ClickHandler(cls.__development)
+        click_handler = ClickHandler()
         click_handler.setLevel(logging.DEBUG)
 
         logger.addHandler(click_handler)
+
+    @classmethod
+    @property
+    def development(cls) -> bool:
+        return cls.__development
+
+    @classmethod
+    @property
+    def color(cls) -> bool:
+        return cls.__color
 
     @classmethod
     def get_logger(cls, module: str):
@@ -58,6 +71,26 @@ class ExtendedLogRecord(logging.LogRecord):
     komoe_module: str
 
 
+def remove_decorations(message: str) -> str:
+    ascii_only = ""
+    trim = False
+    for char in message:
+        if char.isascii():
+            if not trim or not char.isspace():
+                ascii_only += char
+                trim = False
+        else:
+            trim = True
+    return ascii_only
+
+
+def echo(message: str, err: bool = False, **style):
+    if Logging.color:
+        click.secho(message, err=err, **style)
+    else:
+        click.echo(remove_decorations(message), err=err, color=False)
+
+
 def check_record(record: ExtendedLogRecord):
     location = f"\n   at {record.pathname}:{record.lineno}"
     if len(record.msg.strip()) == 0:
@@ -69,31 +102,29 @@ def check_record(record: ExtendedLogRecord):
 
 
 class ClickHandler(Handler):
-    __development: bool
-
-    def __init__(self, development):
-        super().__init__()
-        self.__development = development
-
     def emit(self, record: ExtendedLogRecord):
         level_name = record.levelname.lower()
 
         if record.levelno >= logging.ERROR:
             color = "bright_red"
+            stderr = True
         elif record.levelno >= logging.WARNING:
             color = "yellow"
+            stderr = True
         elif record.levelno >= logging.INFO:
             color = None
+            stderr = False
         else:
             color = "bright_black"
+            stderr = False
 
-        click.secho(
+        echo(
             f"[{level_name}] {record.komoe_module}: {record.msg}",
-            err=True,
+            err=stderr,
             fg=color,
         )
 
-        if self.__development:
+        if Logging.development:
             check_record(record)
 
 

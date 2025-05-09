@@ -346,62 +346,6 @@ class Plugins:
     def register_standalone_function(self, func: StandalonePluginFunction, event: str):
         self.__standalone_functions.append((func, event))
 
-    # def events(self, module):
-    #     if module not in self.__events:
-    #         self.__events[module] = _ModuleEvents()
-    #     return self.__events[module]
-    #
-    # def actions(self, module):
-    #     if module not in self.__actions:
-    #         self.__actions[module] = _ModuleActions(module)
-    #
-    #     return self.__actions[module]
-    #
-    # def subscribe(self, module, event, callback):
-    #     plugin_name = self.__context.get_package_alias(
-    #         callback.__module__,
-    #         callback.__module__.replace("_komoe_plugin", ""),
-    #     )
-    #     action_name = callback.__name__
-    #
-    #     if plugin_name == module:
-    #         log.error(
-    #             f"a plugin can't subscribe to itself ({plugin_name}.{action_name})"
-    #         )
-    #         raise click.ClickException("failed to load plugins")
-    #
-    #     action = _Action(callback)
-    #
-    #     events = self.events(module)
-    #     events.register(event, action)
-    #
-    #     actions = self.actions(plugin_name)
-    #     actions.add(action)
-    #
-    #     self.events(plugin_name)
-    #
-    # def register_setup(self, callback):
-    #     plugin_name = self.__context.get_package_alias(
-    #         callback.__module__,
-    #         callback.__module__.replace("_komoe_plugin", ""),
-    #     )
-    #
-    #     self.__setup.append((plugin_name, callback))
-    #
-    # def register_cleanup(self, callback):
-    #     plugin_name = self.__context.get_package_alias(
-    #         callback.__module__,
-    #         callback.__module__.replace("_komoe_plugin", ""),
-    #     )
-    #
-    #     self.__cleanup.append((plugin_name, callback))
-    #
-    # def build_started(self):
-    #     self.notify(Internal.Build, "start")
-    #
-    # def build_ended(self):
-    #     self.notify(Internal.Build, "end")
-
     def set_context(self, context: Mapping[str, Any]) -> Mapping[str, EventSource]:
         """
         Set up the build context and initialise a new observable.
@@ -417,41 +361,6 @@ class Plugins:
         observable = ObservableBuild()
         self.__context = {**context, "observable": observable}
         return observable.setup_internal_events()
-
-    # def notify(self, module, event):
-    #     for action in self.events(module).on(event):
-    #         if not action.module.started:
-    #             self.notify(action.module.name, "start")
-    #
-    #         action(
-    #             BuilderProxy(self.__context, action.module.name),
-    #             self.__config.get(action.module.name, {}),
-    #         )
-    #
-    #         if action.module.ended:
-    #             self.notify(action.module.name, "end")
-    # def cleanup(self):
-    #     for module, callback in self.__cleanup:
-    #         callback(
-    #             BuilderProxy(self.__context, module),
-    #             self.__config.get(module, {}),
-    #         )
-    #
-    # def reload(self):
-    #     for module_actions in self.__actions.values():
-    #         module_actions.reload()
-    #
-    # def reset(self):
-    #     self.__setup.clear()
-    #     self.__cleanup.clear()
-    #     self.__events.clear()
-    #     self.__actions.clear()
-    #     self.__scripts.clear()
-    #
-    #     self.__context = None
-    #     self.__config = None
-    #
-    #     self.__events[Internal.Build] = _ModuleEvents()
 
 
 class MarkdownProxy:

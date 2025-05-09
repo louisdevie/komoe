@@ -11,10 +11,7 @@ import json
 from pathlib import Path
 from functools import partial
 
-from komoe.log import Log
 from komoe.config import KomoeConfig
-from komoe.plugin import PluginScheduler
-from komoe.utils import file_status, file_status_done, clear_tree, file_status_failed
 from komoe.paths import ProjectPaths
 from .snapshots import Diff, SnapshotRegistry
 from .markdown import Markdown

@@ -1,8 +1,6 @@
 from pathlib import Path
 from typing import Optional, Iterable, Sequence
 
-from komoe.log import Log
-
 
 class Node:
     def __init__(self, title, is_document):
