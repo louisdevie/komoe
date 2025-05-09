@@ -15,16 +15,11 @@ RESERVED_MODULES = [
 
 
 class Logging:
-    __initialised = False
     __development = False
 
     @classmethod
-    def __init_once(cls):
-        if cls.__initialised:
-            return
-        cls.__initialised = True
-
-        cls.__development = bool(os.getenv("KOMOE_DEV"))
+    def init(cls, development: bool):
+        cls.__development = development or bool(os.getenv("KOMOE_DEV"))
         level = logging.DEBUG if cls.__development else logging.INFO
 
         # set up a root 'komoe' logger
@@ -38,8 +33,6 @@ class Logging:
 
     @classmethod
     def get_logger(cls, module: str):
-        cls.__init_once()
-
         module_parts = module.split(".")
         if len(module_parts) == 0 or module_parts[0] != ROOT:
             raise ValueError(f"Can't create a komoe logger for module '{module}'")
@@ -54,8 +47,6 @@ class Logging:
 
     @classmethod
     def get_logger_for_plugin(cls, plugin_name: str):
-        cls.__init_once()
-
         if plugin_name in RESERVED_MODULES:
             plugin_name = plugin_name + "_plugin"
 
@@ -88,7 +79,7 @@ class ClickHandler(Handler):
         level_name = record.levelname.lower()
 
         if record.levelno >= logging.ERROR:
-            color = "red"
+            color = "bright_red"
         elif record.levelno >= logging.WARNING:
             color = "yellow"
         elif record.levelno >= logging.INFO:
@@ -100,7 +91,6 @@ class ClickHandler(Handler):
             f"[{level_name}] {record.komoe_module}: {record.msg}",
             err=True,
             fg=color,
-            bold=True,
         )
 
         if self.__development:

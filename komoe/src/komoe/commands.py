@@ -9,16 +9,18 @@ from click import ClickException
 from . import template, __version__
 from .config import KomoeConfig
 from .devtools import Devtools
+from .logging import Logging
 
 
 @click.group()
 @click.version_option(
     version=str(__version__),
-    prog_name="YourAppName",
+    prog_name="Komoe",
     message="%(prog)s version %(version)s",
 )
-def main():
-    ...
+@click.option("--debug", is_flag=True, help="Enable debug logging to the console.")
+def main(debug: bool):
+    Logging.init(debug)
 
 
 def load_config(path):
@@ -26,7 +28,7 @@ def load_config(path):
 
     if not config.minimum_required_version.contains(__version__):
         raise click.ClickException(
-            f"The project requires at least Komoe v{config.minimum_required_version}"
+            f"The project requires Komoe {config.minimum_required_version}"
         )
 
     return config

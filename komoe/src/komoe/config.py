@@ -48,7 +48,7 @@ class ConfigValue:
         if converted_value is NotImplemented:
             raise InvalidConfigException()
         else:
-            return self.__value
+            return converted_value
 
     def get(self, item: str, default: object = MISSING) -> "ConfigValue":
         item_value = default
@@ -101,6 +101,7 @@ class KomoeConfig:
 
     @classmethod
     def from_file(cls, path: PathLike) -> "KomoeConfig":
+        log.debug(f"Reading configuration from '{path}'")
         try:
             with open(path, "rb") as f:
                 toml_dict = tomli.load(f)
