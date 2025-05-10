@@ -5,8 +5,6 @@ import click
 import os
 from pathlib import Path
 
-from click import ClickException
-
 from . import template, __version__
 from .build.builder import Builder
 from .config import KomoeConfig, Caching
@@ -23,12 +21,14 @@ from .paths import ProjectPaths
 )
 @click.option("--debug", is_flag=True, help="Enable debug logging to the console.")
 @click.option(
-    "--no-color",
-    is_flag=True,
-    help=".",
+    "--color/--no-color",
+    default=None,
+    help="Enable or disable colored output and non-ascii decorations. If no flag "
+    "is passed, color will be enabled unless the NO_COLOR environment variable "
+    "is set.",
 )
-def main(debug: bool, no_color: bool):
-    Logging.init(debug, not no_color)
+def main(debug: bool, color: bool | None):
+    Logging.init(debug, color)
 
 
 def load_config(path):
@@ -52,7 +52,8 @@ def load_config(path):
     "--project-name", "-N", prompt=True, required=True, help="The name of the project"
 )
 def new(path, project_name):
-    """Creates a new project
+    """
+    Creates a new project
 
     If PATH isn't specified, the current directory is used.
     """
@@ -73,23 +74,16 @@ def new(path, project_name):
 
 
 @main.command()
-@click.option(
-    "--project-file",
-    "-p",
-    type=click.Path(dir_okay=False, exists=True, path_type=Path),
-    help="Build a specific project file (overrides --project-dir)",
-)
-@click.option(
-    "--project-dir",
-    "-P",
-    type=click.Path(file_okay=False, exists=True, path_type=Path),
-    help="Build the project from the specified directory",
+@click.argument(
+    "project",
+    default=".",
+    type=click.Path(path_type=Path),
 )
 @click.option(
     "--clean/--dirty",
-    help="A clean build (the default) will clear the output directory. A dirty "
-    "build will keep the files from previous builds and only rebuild files that "
-    "have changed if the cache is available.",
+    help="A clean build (the default) will clear the output directory before "
+    "rebuilding the project. A dirty build will keep the files from previous "
+    "builds.",
 )
 @click.option(
     "--output-dir",
@@ -97,6 +91,11 @@ def new(path, project_name):
     type=click.Path(file_okay=False, path_type=Path),
     default="www",
     help='The directory where the site is built. "site" is used by default.',
+)
+@click.option(
+    "--strict",
+    is_flag=True,
+    help="Treat warnings as errors and make the build fail if any error occurs.",
 )
 @click.option(
     "--cache",
@@ -125,31 +124,29 @@ def new(path, project_name):
     help='The directory where cache data is stored. The default is ".cache".',
 )
 def build(
-    project_file: Optional[Path],
-    project_dir: Optional[Path],
-    **other_options,
+    project: Path,
+    **options,
 ):
     """Build a project
 
-    If no project is specified, the project in the current directory will be built.
+    The PROJECT may be a project directory or a configuration file. If PROJECT
+    is not specified, the project in the current directory will be built.
     """
 
-    if project_file is not None:
-        config_path = project_file
+    config_path = None
 
-    elif (project_dir is not None) and "komoe.toml" in (
-        f.name for f in project_dir.iterdir()
-    ):
-        config_path = project_dir / "komoe.toml"
+    if project.is_file():
+        config_path = project
+    elif project.is_dir():
+        project_file = project / "komoe.toml"
+        if project_file.is_file():
+            config_path = project_file
 
-    elif "komoe.toml" in (f.name for f in Path.cwd().iterdir()):
-        config_path = Path.cwd() / "komoe.toml"
-
-    else:
-        raise click.ClickException("project file not found")
+    if config_path is None:
+        raise click.ClickException(f"No project found in '{project}'")
 
     config = load_config(config_path)
-    config.use_cli_args(other_options)
+    config.use_cli_args(options)
 
     paths = ProjectPaths(config_path.parent, config)
     builder = Builder(config, paths)
@@ -177,7 +174,7 @@ def serve(project_file, project_dir):
     If no project is specified, the project in the current directory will be built.
     """
     if not Devtools.are_available:
-        raise ClickException(
+        raise click.ClickException(
             "The komoe-devtools package must be installed in order to use this command."
         )
 

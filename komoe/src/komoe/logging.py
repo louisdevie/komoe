@@ -19,11 +19,11 @@ class Logging:
     __color = False
 
     @classmethod
-    def init(cls, development: bool, color: bool):
+    def init(cls, development: bool, color: bool | None):
         cls.__development = development or bool(os.getenv("KOMOE_DEV"))
-        cls.__color = color and not bool(os.getenv("NO_COLOR"))
-
         level = logging.DEBUG if cls.__development else logging.INFO
+
+        cls.__color = color if color is not None else not bool(os.getenv("NO_COLOR"))
 
         # set up a root 'komoe' logger
         logger = logging.getLogger(ROOT)
