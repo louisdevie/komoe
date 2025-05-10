@@ -3,7 +3,7 @@
 A static site generator
 
 > [!NOTE]
-> Check out the 0.4 branch if you're looking for the code of the last stable version.
+> Check out the 0.4 branch if you're looking for the code of the latest stable version.
 
 ## Projects
 
